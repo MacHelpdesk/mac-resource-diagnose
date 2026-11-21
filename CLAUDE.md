@@ -1,3 +1,34 @@
+<!-- SPECTRA:START v1.3.0 -->
+
+# Spectra Instructions
+
+This project uses Spectra for Spec-Driven Development(SDD). Specs live in `docs/spectra/specs/`, change proposals in `docs/spectra/changes/`.
+
+## Skills
+
+Each `/spectra-*` skill carries its own trigger description; these are the groups:
+
+- Shape and plan → `/spectra-discuss`, `/spectra-propose`
+- Continue tasks for an identified change → `/spectra-apply`
+- Update requirements or plans for an identified change → `/spectra-ingest`
+- Quality gate → `/spectra-verify`, `/spectra-review`, `/spectra-analyze`, `/spectra-audit`, `/spectra-drift`, `/spectra-debug`
+- Finish → `/spectra-archive`, `/spectra-commit`
+
+Explicit skill invocation takes precedence. Apply existing authorization within its unchanged scope.
+
+## Workflow
+
+discuss? → propose → apply ⇄ ingest → verify / review → archive
+
+- `discuss` is optional — skip if requirements are clear
+- Requirements change mid-work? Plan mode → `ingest` → resume `apply`
+
+## Parked Changes
+
+Changes can be parked（暫存）— temporarily moved out of `docs/spectra/changes/`. Parked changes won't appear in `spectra list` but can be found with `spectra list --parked`. To restore: `spectra unpark <name>`. The `/spectra-apply` and `/spectra-ingest` skills disclose parking and restore when the named operation is already explicitly requested; respect a known refusal, otherwise ask for missing authorization.
+
+<!-- SPECTRA:END -->
+
 # CLAUDE.md
 
 MacHelpdesk 系列的資源診斷工具。整個系列共用的規則（公開 repo 不寫任何人的環境、只寫實測過的行為、會改設定的動作寫明界線、`/bin/bash` 3.2 相容、Git 流程）在 umbrella repo `MacHelpdesk/mac-helpdesk` 的 CLAUDE.md，這裡不重抄。
