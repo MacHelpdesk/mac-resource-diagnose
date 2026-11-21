@@ -1,0 +1,7 @@
+PID	Status	Label
+500	0	com.example.sync-agent
+-	0	com.example.updater
+910	0	com.apple.something
+911	0	application.com.example.editor.123.456
+912	0	org.example.helper
+-	78	com.apple.idle

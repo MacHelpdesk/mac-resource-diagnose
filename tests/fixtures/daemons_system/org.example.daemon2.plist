@@ -1,0 +1,2 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<plist version="1.0"><dict><key>Label</key><string>org.example.daemon2</string><key>ProgramArguments</key><array><string>/opt/example/daemon2</string><string>--flag</string></array></dict></plist>

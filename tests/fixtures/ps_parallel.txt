@@ -1,0 +1,12 @@
+    1     0   0.5  22016 /sbin/launchd
+  200     1  40.0 350000 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer
+  301   300  30.0 120000 /opt/tools/bin/compiler-frontend
+  302   300  30.0 120000 /opt/tools/bin/compiler-frontend
+  303   300  30.0 120000 /opt/tools/bin/compiler-frontend
+  304   300  30.0 120000 /opt/tools/bin/compiler-frontend
+  305   300  30.0 120000 /opt/tools/bin/compiler-frontend
+  306   300   2.0 120000 /opt/tools/bin/compiler-frontend
+  400     1  12.5 512000 /Applications/Example Editor.app/Contents/MacOS/Example Editor
+  401   400  60.0 2048000 /Applications/Example Editor.app/Contents/Frameworks/Example Helper (Renderer).app/Contents/MacOS/Example Helper (Renderer)
+  500     1   1.0  40960 /Applications/Sync Thing.app/Contents/MacOS/sync-agent
+  600     1   0.0   1024 worker job

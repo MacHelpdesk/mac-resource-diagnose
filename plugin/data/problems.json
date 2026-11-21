@@ -1,0 +1,436 @@
+{
+  "schema_version": 1,
+  "about": "Mac 變慢時的已知狀況。每筆有症狀、量得到的訊號、原因、可以做的事與驗證狀態。解法的 class：direct 直接做、ask 先問使用者、user 只能由使用者自己做。個人條目放 ~/.config/mac-resource-diagnose/problems.local.json。",
+  "signals": {
+    "cpu_count": {
+      "description": "邏輯核心數（sysctl hw.ncpu）",
+      "values": "number"
+    },
+    "process_count": {
+      "description": "量測當下的程序總數（ps）",
+      "values": "number"
+    },
+    "cpu_used_pct_per_core": {
+      "description": "所有程序的 CPU 百分比加總，除以核心數。100 表示每個核心都用滿",
+      "values": "number"
+    },
+    "top_process_cpu_pct": {
+      "description": "最吃 CPU 的單一程序的 CPU 百分比。100 表示用滿一個核心，多執行緒的程序可以超過 100",
+      "values": "number"
+    },
+    "busy_processes": {
+      "description": "CPU 百分比在 50 以上的程序數",
+      "values": "number"
+    },
+    "busy_group_size": {
+      "description": "同名的程序裡，CPU 百分比在 10 以上的最多有幾個。數字大表示同一種工作同時跑了很多份",
+      "values": "number"
+    },
+    "load_per_core_pct": {
+      "description": "1 分鐘平均負載除以核心數，乘以 100。100 表示等著執行的工作剛好和核心一樣多",
+      "values": "number"
+    },
+    "load5_per_core_pct": {
+      "description": "5 分鐘平均負載除以核心數，乘以 100",
+      "values": "number"
+    },
+    "memory_pressure": {
+      "description": "系統回報的記憶體壓力等級（sysctl kern.memorystatus_vm_pressure_level）。normal：正常；warn：吃緊；critical：嚴重；unknown：讀不到",
+      "values": [
+        "normal",
+        "warn",
+        "critical",
+        "unknown"
+      ]
+    },
+    "memory_free_pct": {
+      "description": "系統回報的可用記憶體百分比（sysctl kern.memorystatus_level）",
+      "values": "number"
+    },
+    "swap_used_mb": {
+      "description": "已經用掉的 swap，單位 MB（sysctl vm.swapusage）",
+      "values": "number"
+    },
+    "startup_user_agents": {
+      "description": "~/Library/LaunchAgents 裡，登入後不必有人開啟就會自己啟動的項目數（RunAtLoad 為真，或設了 KeepAlive）",
+      "values": "number"
+    },
+    "startup_system_items": {
+      "description": "/Library/LaunchAgents 與 /Library/LaunchDaemons 裡的項目數，都是安裝的軟體放的",
+      "values": "number"
+    },
+    "running_third_party_services": {
+      "description": "這個登入階段裡正在執行、不屬於 Apple 的背景服務數（launchctl list；使用者自己開啟的 app 不算）",
+      "values": "number"
+    }
+  },
+  "never": [
+    {
+      "action": "結束系統的程序：kind 是 system 的任何程序，包括 WindowServer、launchd、kernel_task、loginwindow、mds、tccd、trustd",
+      "reason": "結束 WindowServer 會把使用者登出並丟掉沒存檔的工作；其他的會被系統立刻重啟，沒有幫助。它們忙通常是被別的程式拖著，要找的是那個程式"
+    },
+    {
+      "action": "用 kill -9 或 killall",
+      "reason": "kill -9 不讓程式存檔或收尾；killall 依名稱結束，會波及同名的其他程序"
+    },
+    {
+      "action": "刪除、搬移或修改 launchd 的 plist、app 或任何檔案",
+      "reason": "停用一個項目用 launchctl 就能做到而且可以復原；刪了檔案，該軟體可能壞掉或在更新時又裝回來"
+    },
+    {
+      "action": "代替使用者執行 sudo，或停用 /Library/LaunchDaemons 與 /Library/LaunchAgents 裡的項目",
+      "reason": "那些是需要管理者權限的系統層項目，常常是 VPN、防毒、驅動程式或印表機，關掉的後果要由使用者自己判斷"
+    },
+    {
+      "action": "執行 purge、清除快取，或安裝任何「清理」「加速」軟體",
+      "reason": "purge 只會讓系統把剛丟掉的東西再讀一次；清理軟體本身就是常駐的背景程式"
+    }
+  ],
+  "problems": [
+    {
+      "id": "single-process-busy",
+      "title": "一個程序吃掉大部分 CPU",
+      "symptoms": [
+        "風扇轉、機身發熱，但只開著幾個程式",
+        "活動監視器裡有一個程序的 CPU 長時間在 90% 以上"
+      ],
+      "match": {
+        "all": [
+          {
+            "signal": "top_process_cpu_pct",
+            "op": "gte",
+            "value": 90
+          },
+          {
+            "signal": "busy_group_size",
+            "op": "lte",
+            "value": 2
+          }
+        ]
+      },
+      "cause": "某一個程序持續用滿一個以上的核心。可能是它正在做該做的事（轉檔、編譯、建立索引），也可能是卡在迴圈裡。量測一次分不出來，要隔一兩分鐘再量一次，看它是不是還在同樣的位置。",
+      "confirm": [
+        "res-diag.sh top 5 cpu"
+      ],
+      "fixes": [
+        {
+          "id": "wait-and-remeasure",
+          "action": "隔一到兩分鐘再跑一次 top，確認同一個 pid 仍然在最上面，並告訴使用者那是哪個程式的哪個程序",
+          "class": "direct",
+          "command": "res-diag.sh top 5 cpu",
+          "evidence": "unverified"
+        },
+        {
+          "id": "quit-in-app",
+          "action": "請使用者在那個 app 裡正常結束，或關掉它正在處理的視窗或分頁",
+          "class": "user",
+          "side_effects": "該 app 沒存檔的內容要先存",
+          "evidence": "unverified"
+        },
+        {
+          "id": "terminate-process",
+          "action": "kind 是 app、agent 或 other 的程序，經使用者同意後送結束訊號",
+          "class": "ask",
+          "command": "kill <pid>",
+          "side_effects": "程式會收到結束的要求，沒存檔的內容可能遺失；由 launchd 管理而且設了 KeepAlive 的程序會被馬上重新啟動",
+          "verify": "再跑一次 top，那個 pid 不在清單裡",
+          "evidence": "unverified"
+        }
+      ],
+      "evidence": {
+        "status": "unverified",
+        "date": "2026-11-22",
+        "macos": "27.3",
+        "note": "訊號在這個版本實際量到（一個程序 145%）。解法沒有在這個工具裡實際執行過"
+      }
+    },
+    {
+      "id": "many-parallel-jobs",
+      "title": "同一種工作同時跑了很多份",
+      "symptoms": [
+        "編譯、測試、批次轉檔或多個自動化工作同時進行時，整台機器反應變慢",
+        "top 裡有很多同名的程序各佔一些 CPU"
+      ],
+      "match": {
+        "all": [
+          {
+            "signal": "busy_group_size",
+            "op": "gte",
+            "value": 4
+          },
+          {
+            "signal": "load_per_core_pct",
+            "op": "gte",
+            "value": 150
+          }
+        ]
+      },
+      "cause": "同時進行的工作比核心多，每個工作都在排隊等 CPU。這不是哪一個程式壞了，是同時啟動的份數太多：編譯工具預設用上所有核心，再同時開好幾個編譯或好幾個自動化工作階段，份數就相乘。",
+      "confirm": [
+        "res-diag.sh groups 10"
+      ],
+      "fixes": [
+        {
+          "id": "name-the-groups",
+          "action": "用 groups 列出加總後最吃 CPU 的幾個來源，告訴使用者是哪些工作、各有幾個程序",
+          "class": "direct",
+          "command": "res-diag.sh groups 10",
+          "evidence": "unverified"
+        },
+        {
+          "id": "let-them-finish",
+          "action": "這些是使用者自己啟動的工作時，等它們做完，或由使用者決定先停掉哪幾個",
+          "class": "user",
+          "evidence": "unverified"
+        },
+        {
+          "id": "lower-parallelism",
+          "action": "請使用者降低同時進行的份數：少開幾個同時編譯的專案或工作階段，或在建置工具裡設定平行工作的上限",
+          "class": "user",
+          "evidence": "unverified"
+        }
+      ],
+      "evidence": {
+        "status": "unverified",
+        "date": "2026-11-22",
+        "macos": "27.3",
+        "note": "訊號在這個版本實際量到（同名程序 23 個同時在跑，負載是每核心的 11 倍）。降低份數之後負載是否回到正常，沒有量過"
+      }
+    },
+    {
+      "id": "load-above-cpu",
+      "title": "負載遠高於 CPU 使用量",
+      "symptoms": [
+        "平均負載是核心數的好幾倍，但 CPU 並沒有用滿",
+        "操作有延遲，游標偶爾轉圈"
+      ],
+      "match": {
+        "all": [
+          {
+            "signal": "load_per_core_pct",
+            "op": "gte",
+            "value": 300
+          },
+          {
+            "signal": "cpu_used_pct_per_core",
+            "op": "lte",
+            "value": 80
+          }
+        ]
+      },
+      "cause": "平均負載算的是想執行的工作數，包括正在等待的。負載遠高於 CPU 使用量，表示很多工作在等某樣東西，而不是在用 CPU。在等什麼，這個工具的第一版量不出來：可能是磁碟讀寫、彼此等待的鎖，或數量極多、每個只做一點事的短命程序。",
+      "confirm": [
+        "res-diag.sh groups 15",
+        "res-diag.sh top 15 cpu"
+      ],
+      "fixes": [
+        {
+          "id": "count-processes",
+          "action": "比較 process_count 與 groups 的程序數，找出程序數量特別多的來源，告訴使用者",
+          "class": "direct",
+          "command": "res-diag.sh groups 15",
+          "evidence": "unverified"
+        },
+        {
+          "id": "say-what-is-unknown",
+          "action": "向使用者說明：這個狀況的原因沒有確認，工具量不到磁碟讀寫。可以請使用者打開活動監視器的「磁碟」分頁看哪個程序讀寫最多",
+          "class": "user",
+          "evidence": "unverified"
+        }
+      ],
+      "evidence": {
+        "status": "unverified",
+        "date": "2026-11-22",
+        "macos": "27.3",
+        "note": "訊號在這個版本實際量到（負載是每核心的 11 倍，CPU 使用量是每核心 73%，程序近三千個）。原因沒有查明"
+      }
+    },
+    {
+      "id": "memory-pressure",
+      "title": "記憶體吃緊",
+      "symptoms": [
+        "切換程式或分頁時停頓",
+        "系統跳出「應用程式記憶體不足」"
+      ],
+      "match": {
+        "all": [
+          {
+            "signal": "memory_pressure",
+            "op": "not_equals",
+            "value": "normal"
+          }
+        ]
+      },
+      "cause": "系統回報記憶體壓力不是正常。這時系統會壓縮記憶體並把內容寫到磁碟（swap），每次切換都要讀回來。",
+      "confirm": [
+        "res-diag.sh top 10 mem",
+        "res-diag.sh groups 10"
+      ],
+      "fixes": [
+        {
+          "id": "name-top-memory",
+          "action": "用 top 的 mem 排序與 groups 列出最佔記憶體的來源，告訴使用者",
+          "class": "direct",
+          "command": "res-diag.sh top 10 mem",
+          "evidence": "unverified"
+        },
+        {
+          "id": "quit-apps",
+          "action": "請使用者結束用不到的 app，或關掉瀏覽器與編輯器裡用不到的分頁與視窗",
+          "class": "user",
+          "evidence": "unverified"
+        }
+      ],
+      "evidence": {
+        "status": "unverified",
+        "date": "2026-11-22",
+        "macos": "27.3",
+        "note": "量測的機器上這個訊號多數時候是 normal；有一次比對時短暫不是 normal，但沒有留下當時的值。沒有在持續吃緊的機器上看過"
+      }
+    },
+    {
+      "id": "heavy-swap",
+      "title": "swap 用了很多",
+      "symptoms": [
+        "記憶體壓力顯示正常，但 swap 已經用了好幾 GB",
+        "開很久的 app 切回來時要等一下"
+      ],
+      "match": {
+        "all": [
+          {
+            "signal": "swap_used_mb",
+            "op": "gte",
+            "value": 8192
+          }
+        ]
+      },
+      "cause": "某個時候記憶體不夠，系統把暫時用不到的內容寫到磁碟。壓力過了之後，這些內容不會主動讀回來，所以 swap 的數字會留著。它本身不代表現在慢；切回那些被寫出去的程式時才會慢。",
+      "confirm": [
+        "res-diag.sh top 10 mem"
+      ],
+      "fixes": [
+        {
+          "id": "name-top-memory",
+          "action": "列出最佔記憶體的來源，告訴使用者哪些是長時間開著的",
+          "class": "direct",
+          "command": "res-diag.sh groups 10",
+          "evidence": "unverified"
+        },
+        {
+          "id": "quit-long-running",
+          "action": "請使用者結束再重開長時間開著又佔很多記憶體的 app；重新開機會清掉全部的 swap",
+          "class": "user",
+          "side_effects": "重新開機前要存檔",
+          "evidence": "unverified"
+        }
+      ],
+      "evidence": {
+        "status": "unverified",
+        "date": "2026-11-22",
+        "macos": "27.3",
+        "note": "訊號在這個版本實際量到（swap 用了 22 GB，同時記憶體壓力是 normal、可用記憶體 52%）。結束 app 之後 swap 降多少，沒有量過"
+      }
+    },
+    {
+      "id": "many-startup-agents",
+      "title": "登入後自己啟動的背景項目很多",
+      "symptoms": [
+        "登入之後要等一陣子才順",
+        "選單列有很多不認得的圖示",
+        "沒開什麼程式，背景卻有很多程序"
+      ],
+      "match": {
+        "all": [
+          {
+            "signal": "startup_user_agents",
+            "op": "gte",
+            "value": 10
+          }
+        ]
+      },
+      "cause": "安裝軟體時，很多程式會放一個登入後自動啟動的背景項目：更新程式、同步、授權檢查、快捷工具。每一個都很小，加起來就佔住登入後的那幾分鐘，有些還會一直留在記憶體裡。它們分散在三個地方：系統設定的「登入時打開」、使用者的 LaunchAgents、系統層的 LaunchAgents 與 LaunchDaemons；系統設定的畫面看不到全部。",
+      "confirm": [
+        "res-diag.sh startup",
+        "res-diag.sh login-items"
+      ],
+      "fixes": [
+        {
+          "id": "list-startup",
+          "action": "用 startup 列出三個地方的項目，分成正在執行與沒在執行，告訴使用者每一個是哪個軟體的",
+          "class": "direct",
+          "command": "res-diag.sh startup",
+          "evidence": "unverified"
+        },
+        {
+          "id": "login-items-in-settings",
+          "action": "「登入時打開」的項目與「允許在背景執行」的開關，請使用者到系統設定 > 一般 > 登入項目與延伸功能 自己關",
+          "class": "user",
+          "evidence": "unverified"
+        },
+        {
+          "id": "disable-user-agent",
+          "action": "source 是 user-agent 的項目，經使用者逐項同意後停用",
+          "class": "ask",
+          "command": "launchctl bootout gui/$(id -u)/<label> ; launchctl disable gui/$(id -u)/<label>",
+          "side_effects": "那個軟體的自動更新、同步或選單列圖示會停止，直到復原。復原：launchctl enable gui/$(id -u)/<label>，再 launchctl bootstrap gui/$(id -u) <plist 路徑>，或登出再登入。軟體更新時可能把它重新啟用",
+          "verify": "再跑一次 startup，那個 label 的 pid 欄是 not-loaded",
+          "evidence": "unverified"
+        },
+        {
+          "id": "uninstall",
+          "action": "根本不用的軟體，請使用者用它自己的解除安裝程式移除",
+          "class": "user",
+          "evidence": "unverified"
+        }
+      ],
+      "evidence": {
+        "status": "unverified",
+        "date": "2026-11-22",
+        "macos": "27.3",
+        "note": "訊號在這個版本實際量到（使用者層 13 個會自己啟動、系統層 81 個項目、登入時打開 27 個）。停用的指令沒有在這個工具裡實際執行過，停用之後登入快多少也沒有量過"
+      }
+    },
+    {
+      "id": "many-background-services",
+      "title": "正在執行的第三方背景服務很多",
+      "symptoms": [
+        "什麼都沒開，活動監視器裡仍有幾十個第三方的程序"
+      ],
+      "match": {
+        "all": [
+          {
+            "signal": "running_third_party_services",
+            "op": "gte",
+            "value": 25
+          }
+        ]
+      },
+      "cause": "這個登入階段裡有很多不屬於 Apple 的背景服務正在執行。它們多半各自只用一點資源，但加起來會佔記憶體，也讓負載在有事發生時更容易堆高。和 many-startup-agents 的差別：那一筆數的是「設定成會自己啟動」的項目，這一筆數的是「現在真的在跑」的。",
+      "confirm": [
+        "res-diag.sh startup",
+        "res-diag.sh groups 20"
+      ],
+      "fixes": [
+        {
+          "id": "list-running",
+          "action": "從 startup 挑出 pid 欄是數字的項目，對照 groups 的用量，告訴使用者哪幾個實際在用資源",
+          "class": "direct",
+          "command": "res-diag.sh startup",
+          "evidence": "unverified"
+        },
+        {
+          "id": "review-with-user",
+          "action": "逐項問使用者還需不需要；不需要的照 many-startup-agents 的解法處理",
+          "class": "user",
+          "evidence": "unverified"
+        }
+      ],
+      "evidence": {
+        "status": "unverified",
+        "date": "2026-11-22",
+        "macos": "27.3",
+        "note": "訊號在這個版本實際量到（27 個）。門檻 25 是依這一次量測訂的，沒有和其他機器比較過"
+      }
+    }
+  ]
+}

@@ -1,0 +1,2 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<plist version="1.0"><dict><key>Label</key><string>com.example.updater</string><key>RunAtLoad</key><true/><key>ProgramArguments</key><array><string>/opt/example/updater</string><string>--flag</string></array></dict></plist>

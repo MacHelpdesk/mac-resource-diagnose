@@ -1,0 +1,19 @@
+{
+  "name": "mac-resource-diagnose",
+  "version": "0.1.0",
+  "description": "Mac 變慢、風扇一直轉、一登入就很卡時，量測 CPU 負載、記憶體壓力與 swap、最吃資源的程序，以及登入時會自動啟動的背景項目，對照一份已知問題的知識庫（problems.json）分辨是哪一種：單一程序失控、同時進行的工作太多、負載遠高於 CPU 使用量、記憶體不夠、常駐的背景程式太多。量測全部只讀；結束程序與停用登入時啟動的項目都先問使用者，系統層的項目只說明步驟。",
+  "author": {
+    "name": "Che Cheng"
+  },
+  "license": "MIT",
+  "keywords": [
+    "macos",
+    "cpu",
+    "memory",
+    "swap",
+    "load-average",
+    "launchd",
+    "login-items",
+    "troubleshooting"
+  ]
+}
