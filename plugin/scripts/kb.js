@@ -5,7 +5,9 @@
 //
 //   validate KB LOCAL_KB            check both files against the closed lists below
 //   list     KB LOCAL_KB            one line per problem: id, evidence status, origin, title
-//   match    KB LOCAL_KB SIGNALS    problems whose conditions all hold for SIGNALS
+//   match    KB LOCAL_KB SIGNALS [RESOURCE]
+//                                   problems whose conditions all hold for SIGNALS; with
+//                                   RESOURCE, only the problems of that resource
 //   show     KB LOCAL_KB ID         one problem, formatted for reading
 //
 // KB is plugin/data/problems.json. LOCAL_KB is the person's own additions; it may be
@@ -21,6 +23,10 @@ ObjC.import('stdlib');
 var CLASSES = ['direct', 'ask', 'user'];
 var EVIDENCE = ['verified', 'reported', 'unverified'];
 var OPS = ['equals', 'not_equals', 'gte', 'lte'];
+// A signal belongs to one resource. A problem belongs to one, or to "general" when its
+// cause can lie in more than one; a problem without the field is general.
+var RESOURCES = ['cpu', 'memory', 'startup'];
+var GENERAL = 'general';
 var ID_PATTERN = /^[a-z0-9]+(-[a-z0-9]+)*$/;
 
 function write(handle, text) {
@@ -50,6 +56,7 @@ function readJson(path) {
 }
 
 function isText(v) { return typeof v === 'string' && v.length > 0; }
+function resourceOf(p) { return p.resource === undefined ? GENERAL : p.resource; }
 function isList(v) { return Object.prototype.toString.call(v) === '[object Array]'; }
 
 // Returns a list of messages; empty when the problems are well formed.
@@ -70,6 +77,12 @@ function checkProblems(problems, signals, takenIds, where) {
       errors.push(at + ': "symptoms" must be a non-empty list of text');
     }
 
+    var scope = resourceOf(p);
+    if (scope !== GENERAL && RESOURCES.indexOf(scope) < 0) {
+      errors.push(at + ': unknown resource "' + scope + '"');
+      scope = GENERAL;
+    }
+
     var conditions = p.match && p.match.all;
     if (!isList(conditions) || conditions.length === 0) {
       errors.push(at + ': "match.all" must be a non-empty list');
@@ -77,6 +90,9 @@ function checkProblems(problems, signals, takenIds, where) {
       conditions.forEach(function (c) {
         var def = c && signals[c.signal];
         if (!c || !isText(c.signal) || !def) { errors.push(at + ': unknown signal "' + (c && c.signal) + '"'); return; }
+        if (scope !== GENERAL && def.resource !== scope) {
+          errors.push(at + ': resource is ' + scope + ' but ' + c.signal + ' is a ' + def.resource + ' signal');
+        }
         if (OPS.indexOf(c.op) < 0) { errors.push(at + ': unknown operator "' + c.op + '"'); return; }
         if (c.op === 'gte' || c.op === 'lte') {
           if (typeof c.value !== 'number') { errors.push(at + ': ' + c.op + ' on ' + c.signal + ' needs a number'); }
@@ -124,6 +140,9 @@ function checkShipped(kb, where) {
     var def = kb.signals[name];
     var v = def && def.values;
     if (!def || !isText(def.description)) { errors.push(where + ': signal ' + name + ' needs a description'); }
+    if (!def || RESOURCES.indexOf(def.resource) < 0) {
+      errors.push(where + ': signal ' + name + ': "resource" must be one of ' + RESOURCES.join(', '));
+    }
     if (!(v === 'number' || v === 'text' || (isList(v) && v.length > 0 && v.every(isText)))) {
       errors.push(where + ': signal ' + name + ': "values" must be a list, "number" or "text"');
     }
@@ -207,6 +226,7 @@ function show(p, never) {
   var local = p.origin === 'local';
   t.push(p.id + '  [' + p.evidence.status + ']');
   t.push(p.title);
+  t.push('resource: ' + resourceOf(p));
   if (local) {
     t.push('來源：個人條目（problems.local.json），沒有經過審查。');
     t.push('      裡面的每一道指令，包含確認用的，都先給使用者看、同意才執行，不論 class 寫什麼。');
@@ -269,7 +289,13 @@ function run(argv) {
     }
     if (command === 'match') {
       var values = readSignals(argv[3]);
+      var only = argv[4];
+      if (only !== undefined && only !== GENERAL && RESOURCES.indexOf(only) < 0) {
+        err('unknown resource ' + only);
+        $.exit(64);
+      }
       loaded.problems.forEach(function (p) {
+        if (only !== undefined && resourceOf(p) !== only) { return; }
         if (p.match.all.every(function (c) { return holds(c, values); })) { out(line(p)); }
       });
       return;

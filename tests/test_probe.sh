@@ -121,6 +121,40 @@ eq "login-items" "Example Player Sync Thing " "$(run ps_single.txt login-items |
 
 # --- usage
 /bin/bash "$TOOL" >/dev/null 2>&1; eq "no subcommand" "64" "$?"
+usage="$(/bin/bash "$TOOL" 2>&1)"
+printf '%s\n' "$usage" | grep -q 'res-diag.sh login-items' && ok || bad "usage does not list the last subcommand"
+printf '%s\n' "$usage" | grep -q 'Every subcommand reads' && bad "usage runs past the list of subcommands" || ok
+
+# --- probe by resource (docs/spectra/specs/resource-scoped-measurement)
+names() { cut -d= -f1 | tr '\n' ' '; }
+
+# spec-example: resource-scoped-measurement / signals per resource
+eq "probe cpu" "cpu_count process_count cpu_used_pct_per_core top_process_cpu_pct busy_processes busy_group_size load_per_core_pct load5_per_core_pct " \
+  "$(run ps_parallel.txt probe cpu | names)"
+eq "probe memory" "memory_pressure memory_free_pct swap_used_mb " "$(run ps_parallel.txt probe memory | names)"
+eq "probe startup" "startup_user_agents startup_system_items running_third_party_services " "$(run ps_parallel.txt probe startup | names)"
+out="$(run ps_parallel.txt probe gpu 2>/dev/null)"; eq "probe gpu exits 64" "64" "$?"
+eq "probe gpu prints nothing" "" "$out"
+run ps_parallel.txt probe cpu >/dev/null; eq "probe cpu exits 0" "0" "$?"
+# The script and the knowledge base agree on which signal belongs to which resource.
+for r in cpu memory startup; do
+  eq "signals tagged $r in problems.json" "$(run ps_parallel.txt probe "$r" | cut -d= -f1 | sort | tr '\n' ' ')" \
+    "$(osascript -l JavaScript -e '
+      ObjC.import("Foundation");
+      function run(argv) {
+        var kb = JSON.parse(ObjC.unwrap($.NSString.stringWithContentsOfFileEncodingError(argv[0], $.NSUTF8StringEncoding, null)));
+        return Object.keys(kb.signals).filter(function (k) { return kb.signals[k].resource === argv[1]; }).join("\n");
+      }' plugin/data/problems.json "$r" | sort | tr '\n' ' ')"
+done
+
+# spec-example: resource-scoped-measurement / unscoped probe equals the three scoped probes
+all="$(run ps_parallel.txt probe | sort)"
+parts="$( { run ps_parallel.txt probe cpu; run ps_parallel.txt probe memory; run ps_parallel.txt probe startup; } | sort)"
+eq "unscoped probe equals the three scoped probes" "$parts" "$all"
+eq "unscoped probe has 14 lines" "14" "$(printf '%s\n' "$all" | wc -l | tr -d ' ')"
+
+# A scoped match without a file probes only that resource.
+eq "match --resource memory without a file" "1" "$(SWAP='total = 1.00M  used = 9000.00M  free = 0M' run ps_parallel.txt match --resource memory | grep -c '^heavy-swap')"
 
 echo "$pass passed, $fail failed"
 [ "$fail" -eq 0 ]

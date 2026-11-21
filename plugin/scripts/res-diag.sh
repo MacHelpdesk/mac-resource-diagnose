@@ -2,12 +2,19 @@
 # res-diag — measure what is using this Mac's CPU and memory and what starts at login,
 # and look the result up in a knowledge base of known situations.
 #
-#   res-diag.sh probe                 what can be measured, one signal=value per line
-#   res-diag.sh match [SIGNALS_FILE]  known situations these signals fit (id, evidence
+#   res-diag.sh probe [RESOURCE]      what can be measured, one signal=value per line.
+#                                     RESOURCE is cpu, memory or startup; without it,
+#                                     all three
+#   res-diag.sh match [--resource RESOURCE] [SIGNALS_FILE]
+#                                     known situations these signals fit (id, evidence
 #                                     status, origin, title; tab separated). Without a
-#                                     file it runs the probe. Exit 3: no match.
+#                                     file it runs the probe. With a resource (cpu,
+#                                     memory, startup or general) only the situations
+#                                     of that resource are compared, and the probe is
+#                                     limited to it. Exit 3: no match.
 #   res-diag.sh list                  every known situation
-#   res-diag.sh show ID               one situation: symptoms, cause, what can be done
+#   res-diag.sh show ID               one situation: its resource, symptoms, cause, what
+#                                     can be done
 #   res-diag.sh validate              check problems.json and the personal additions
 #   res-diag.sh top [N] [cpu|mem]     the N processes (default 15) using the most CPU or
 #                                     memory: cpu_pct, rss_mb, pid, kind, owner, name
@@ -21,7 +28,7 @@
 #                                     permission prompt the first time
 #
 # Every subcommand reads; none ends a process, unloads a service or changes a setting.
-# Those are decided in the resource-diagnose skill.
+# Those are decided in the cpu-fix, memory-fix and startup-fix skills.
 #
 # Nothing here parses text that changes with the system language: numbers come from
 # sysctl and from ps with LC_ALL=C, launchd items from property lists.
@@ -98,8 +105,8 @@ starts_itself() {
   echo no
 }
 
-probe() {
-  local n la level free swap f c
+probe_cpu() {
+  local n la
   if n="$(ncpu)"; then echo "cpu_count=$n"; else n=""; fi
 
   rows | awk -F'\t' -v n="${n:-0}" '
@@ -122,7 +129,11 @@ probe() {
         printf "load_per_core_pct=%d\nload5_per_core_pct=%d\n", $1 * 100 / n, $2 * 100 / n
     }'
   fi
+  return 0
+}
 
+probe_memory() {
+  local level free swap
   level="$(sysctl_value "${RES_DIAG_PRESSURE:-}" kern.memorystatus_vm_pressure_level)"
   case "$level" in
     1) echo "memory_pressure=normal" ;;
@@ -134,7 +145,11 @@ probe() {
   case "$free" in ''|*[!0-9]*) ;; *) echo "memory_free_pct=$free" ;; esac
   swap="$(sysctl_value "${RES_DIAG_SWAP:-}" vm.swapusage | sed -nE 's/.*used = ([0-9]+)(\.[0-9]+)?M.*/\1/p')"
   [ -n "$swap" ] && echo "swap_used_mb=$swap"
+  return 0
+}
 
+probe_startup() {
+  local f c
   c=0
   for f in "$USER_AGENTS"/*.plist; do
     [ -f "$f" ] || continue
@@ -156,6 +171,18 @@ probe() {
     echo "running_third_party_services=$c"
   fi
   return 0
+}
+
+# probe [RESOURCE]: the signals of one resource, or of all three. Which signal belongs to
+# which resource is also written in problems.json ("resource"); a test compares the two.
+probe() {
+  case "${1:-}" in
+    '') probe_cpu; probe_memory; probe_startup ;;
+    cpu) probe_cpu ;;
+    memory) probe_memory ;;
+    startup) probe_startup ;;
+    *) echo "resource must be cpu, memory or startup" >&2; return 64 ;;
+  esac
 }
 
 # agent_pids: the pids of processes started from ~/Library/LaunchAgents, one per line
@@ -247,11 +274,34 @@ login_items() {
 kb() { osascript -l JavaScript "$KBJS" "$@"; }
 
 case "${1:-}" in
-  probe) probe ;;
+  probe) probe "${2:-}" ;;
   match)
+    shift
+    resource=""; file=""
+    while [ $# -gt 0 ]; do
+      case "$1" in
+        --resource)
+          [ $# -ge 2 ] || { echo "--resource needs a value" >&2; exit 64; }
+          resource="$2"; shift 2 ;;
+        *) file="$1"; shift ;;
+      esac
+    done
+    case "$resource" in
+      ''|cpu|memory|startup|general) ;;
+      *) echo "resource must be cpu, memory, startup or general" >&2; exit 64 ;;
+    esac
     tmpdir
-    if [ -n "${2:-}" ]; then cp "$2" "$TMPD/signals" || exit 1; else probe > "$TMPD/signals"; fi
-    kb match "$KB" "$LOCAL_KB" "$TMPD/signals" > "$TMPD/matched" || exit 1
+    if [ -n "$file" ]; then
+      cp "$file" "$TMPD/signals" || exit 1
+    else
+      # A general situation may use the signals of any resource.
+      case "$resource" in ''|general) probe ;; *) probe "$resource" ;; esac > "$TMPD/signals"
+    fi
+    if [ -n "$resource" ]; then
+      kb match "$KB" "$LOCAL_KB" "$TMPD/signals" "$resource" > "$TMPD/matched" || exit 1
+    else
+      kb match "$KB" "$LOCAL_KB" "$TMPD/signals" > "$TMPD/matched" || exit 1
+    fi
     cat "$TMPD/matched"
     [ -s "$TMPD/matched" ] || exit 3
     ;;
@@ -262,5 +312,7 @@ case "${1:-}" in
   groups) groups "${2:-15}" ;;
   startup) startup ;;
   login-items) login_items ;;
-  *) sed -n '2,22p' "$0" | sed 's/^# \{0,1\}//' >&2; exit 64 ;;
+  # The usage text is the header comment up to its second empty comment line: the
+  # summary and the list of subcommands.
+  *) awk 'NR == 1 { next } /^#$/ { if (++gap == 2) exit } { sub(/^# ?/, ""); print }' "$0" >&2; exit 64 ;;
 esac
