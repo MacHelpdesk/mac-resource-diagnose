@@ -4,7 +4,6 @@
 *~
 .remember/
 .claude/.idd/
-.spectra/
 
 # Personal settings and records never belong in this repository.
 # They live in ~/.config/mac-resource-diagnose/; see README.md.
