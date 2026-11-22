@@ -36,7 +36,11 @@ MacHelpdesk 系列的資源診斷工具。整個系列共用的規則（公開 r
 ## 這個工具特有的
 
 - 範圍是封閉的：CPU、記憶體、登入時會自己啟動的項目。磁碟空間（`mac-disk-space`）、網路（`mac-network-test`）、電池、GPU、溫度都不涵蓋。磁碟讀寫排在之後的版本，要先實測哪些量測不需要管理者權限。
-- `res-diag.sh` 的每個子命令都只讀。結束程序與停用 launchd 項目只寫在 skill 的界線表與知識庫的 `command` 裡，由 skill 在使用者同意後執行。要加會改動東西的子命令，先在 SKILL.md 的四張界線表裡決定它屬於哪一類。
+- 資源是封閉的三種：`cpu`、`memory`、`startup`。每個訊號屬於其中一種；每筆條目屬於其中一種，或是 `general`（原因可能跨資源，只有兩個總入口比對）。標成某一種資源的條目只能用那一種資源的訊號，`validate` 會擋。新增資源時要一起改：`kb.js` 的 `RESOURCES`、`res-diag.sh` 的 `probe` 與 `match` 的清單、一對 skill、`tests/test_skills.sh` 的 `ALL`。
+- skill 有八個：兩個總入口（`resource-diagnose`、`resource-fix`）與每種資源一對。每個 `SKILL.md` 都有四段封閉的界線（直接做、先問、只說明、不做），標題文字固定，測試會找。`plugin/skills/` 是手寫的文字，沒有產生器；同一個動作在兩個 skill 裡的那一列要一字不差（測試比對 `kill <pid>` 與 `res-diag.sh login-items` 兩列）。
+- 需要同意的指令各有擁有它的 skill，這張表是封閉的，測試依字面檢查：`kill <pid>` 只在 `cpu-fix`、`memory-fix`；`launchctl bootout` 與 `launchctl disable` 只在 `startup-fix`；`res-diag.sh login-items` 只在 `startup-diagnose`、`startup-fix`。名稱是 `-diagnose` 的 skill 與兩個總入口都不帶會改動這台 Mac 的指令。要讓別的 skill 提到這些動作，寫「改用某某 skill」，不要把指令寫進去。
+- `res-diag.sh` 的每個子命令都只讀。結束程序與停用 launchd 項目只寫在 skill 的界線表與知識庫的 `command` 裡，由 skill 在使用者同意後執行。要加會改動東西的子命令，先決定它屬於哪一個 skill 的哪一段界線。
+- `res-diag.sh` 沒有子命令時印的用法，是檔頭註解到第二個空註解行為止。在子命令清單中間不要加空的 `#` 行。
 - 系統輸入都有 `RES_DIAG_*` 覆寫（程序清單、核心數、負載、記憶體壓力、可用記憶體、swap、`launchctl list`、三個 launchd 目錄、登入項目），測試只用 `tests/fixtures/` 的合成資料。新增訊號時同時加 fixture 與測試。
 - 不解析會跟著系統語言改變的輸出：數字來自 `sysctl -n` 與 `LC_ALL=C ps`，launchd 項目來自 plist（`plutil -extract … raw`）。不要改用 `top`、`vm_stat`、`memory_pressure` 的文字輸出。
 - 程序名稱、launchd 的 label 與 program 都是別人取的字串。`rows` 把控制字元換成 `?`，輸出才不會多出一行或一欄；新增會印出這些字串的子命令時要經過同樣的處理。
