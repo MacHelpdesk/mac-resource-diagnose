@@ -1,40 +1,49 @@
 {
   "schema_version": 1,
-  "about": "Mac 變慢時的已知狀況。每筆有症狀、量得到的訊號、原因、可以做的事與驗證狀態。解法的 class：direct 直接做、ask 先問使用者、user 只能由使用者自己做。個人條目放 ~/.config/mac-resource-diagnose/problems.local.json。",
+  "about": "Mac 變慢時的已知狀況。每筆有症狀、量得到的訊號、原因、可以做的事與驗證狀態。每個訊號與條目都有 resource（cpu、memory、startup；條目另有 general，表示原因可能跨資源）。解法的 class：direct 直接做、ask 先問使用者、user 只能由使用者自己做。個人條目放 ~/.config/mac-resource-diagnose/problems.local.json。",
   "signals": {
     "cpu_count": {
+      "resource": "cpu",
       "description": "邏輯核心數（sysctl hw.ncpu）",
       "values": "number"
     },
     "process_count": {
+      "resource": "cpu",
       "description": "量測當下的程序總數（ps）",
       "values": "number"
     },
     "cpu_used_pct_per_core": {
+      "resource": "cpu",
       "description": "所有程序的 CPU 百分比加總，除以核心數。100 表示每個核心都用滿",
       "values": "number"
     },
     "top_process_cpu_pct": {
+      "resource": "cpu",
       "description": "最吃 CPU 的單一程序的 CPU 百分比。100 表示用滿一個核心，多執行緒的程序可以超過 100",
       "values": "number"
     },
     "busy_processes": {
+      "resource": "cpu",
       "description": "CPU 百分比在 50 以上的程序數",
       "values": "number"
     },
     "busy_group_size": {
+      "resource": "cpu",
       "description": "同名的程序裡，CPU 百分比在 10 以上的最多有幾個。數字大表示同一種工作同時跑了很多份",
       "values": "number"
     },
     "load_per_core_pct": {
+      "resource": "cpu",
       "description": "1 分鐘平均負載除以核心數，乘以 100。100 表示等著執行的工作剛好和核心一樣多",
       "values": "number"
     },
     "load5_per_core_pct": {
+      "resource": "cpu",
       "description": "5 分鐘平均負載除以核心數，乘以 100",
       "values": "number"
     },
     "memory_pressure": {
+      "resource": "memory",
       "description": "系統回報的記憶體壓力等級（sysctl kern.memorystatus_vm_pressure_level）。normal：正常；warn：吃緊；critical：嚴重；unknown：讀不到",
       "values": [
         "normal",
@@ -44,22 +53,27 @@
       ]
     },
     "memory_free_pct": {
+      "resource": "memory",
       "description": "系統回報的可用記憶體百分比（sysctl kern.memorystatus_level）",
       "values": "number"
     },
     "swap_used_mb": {
+      "resource": "memory",
       "description": "已經用掉的 swap，單位 MB（sysctl vm.swapusage）",
       "values": "number"
     },
     "startup_user_agents": {
+      "resource": "startup",
       "description": "~/Library/LaunchAgents 裡，登入後不必有人開啟就會自己啟動的項目數（RunAtLoad 為真，或設了 KeepAlive）",
       "values": "number"
     },
     "startup_system_items": {
+      "resource": "startup",
       "description": "/Library/LaunchAgents 與 /Library/LaunchDaemons 裡的項目數，都是安裝的軟體放的",
       "values": "number"
     },
     "running_third_party_services": {
+      "resource": "startup",
       "description": "這個登入階段裡正在執行、不屬於 Apple 的背景服務數（launchctl list；使用者自己開啟的 app 不算）",
       "values": "number"
     }
@@ -89,6 +103,7 @@
   "problems": [
     {
       "id": "single-process-busy",
+      "resource": "cpu",
       "title": "一個程序吃掉大部分 CPU",
       "symptoms": [
         "風扇轉、機身發熱，但只開著幾個程式",
@@ -146,6 +161,7 @@
     },
     {
       "id": "many-parallel-jobs",
+      "resource": "cpu",
       "title": "同一種工作同時跑了很多份",
       "symptoms": [
         "編譯、測試、批次轉檔或多個自動化工作同時進行時，整台機器反應變慢",
@@ -199,6 +215,7 @@
     },
     {
       "id": "load-above-cpu",
+      "resource": "general",
       "title": "負載遠高於 CPU 使用量",
       "symptoms": [
         "平均負載是核心數的好幾倍，但 CPU 並沒有用滿",
@@ -247,6 +264,7 @@
     },
     {
       "id": "memory-pressure",
+      "resource": "memory",
       "title": "記憶體吃緊",
       "symptoms": [
         "切換程式或分頁時停頓",
@@ -285,11 +303,12 @@
         "status": "unverified",
         "date": "2026-11-22",
         "macos": "27.3",
-        "note": "量測的機器上這個訊號多數時候是 normal；有一次比對時短暫不是 normal，但沒有留下當時的值。沒有在持續吃緊的機器上看過"
+        "note": "量測的機器上這個訊號多數時候是 normal；2026-11-22 的另一次量測量到 warn，當時這一筆也對到了。沒有在持續吃緊的機器上看過，解法沒有執行過"
       }
     },
     {
       "id": "heavy-swap",
+      "resource": "memory",
       "title": "swap 用了很多",
       "symptoms": [
         "記憶體壓力顯示正常，但 swap 已經用了好幾 GB",
@@ -333,6 +352,7 @@
     },
     {
       "id": "many-startup-agents",
+      "resource": "startup",
       "title": "登入後自己啟動的背景項目很多",
       "symptoms": [
         "登入之後要等一陣子才順",
@@ -369,11 +389,11 @@
         },
         {
           "id": "disable-user-agent",
-          "action": "source 是 user-agent 的項目，經使用者逐項同意後停用",
+          "action": "source 是 user-agent 的項目，經使用者逐項同意後停用。系統層有同名的項目時不代為停用；沒有載入的項目只做 disable 那一道",
           "class": "ask",
-          "command": "launchctl bootout gui/$(id -u)/<label> ; launchctl disable gui/$(id -u)/<label>",
-          "side_effects": "那個軟體的自動更新、同步或選單列圖示會停止，直到復原。復原：launchctl enable gui/$(id -u)/<label>，再 launchctl bootstrap gui/$(id -u) <plist 路徑>，或登出再登入。軟體更新時可能把它重新啟用",
-          "verify": "再跑一次 startup，那個 label 的 pid 欄是 not-loaded",
+          "command": "launchctl bootout gui/$(id -u)/<label> && launchctl disable gui/$(id -u)/<label>",
+          "side_effects": "那個軟體的自動更新、同步或選單列圖示會停止，直到復原。復原：先 launchctl enable gui/$(id -u)/<label>，再 launchctl bootstrap gui/$(id -u) <plist 路徑> 或登出再登入；只登出再登入不會解除停用。軟體更新時可能把它重新啟用",
+          "verify": "再跑一次 startup，那個 label 的 pid 欄是 not-loaded；launchctl print-disabled gui/$(id -u) 裡它是 disabled",
           "evidence": "unverified"
         },
         {
@@ -392,6 +412,7 @@
     },
     {
       "id": "many-background-services",
+      "resource": "startup",
       "title": "正在執行的第三方背景服務很多",
       "symptoms": [
         "什麼都沒開，活動監視器裡仍有幾十個第三方的程序"

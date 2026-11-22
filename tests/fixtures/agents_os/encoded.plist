@@ -1,0 +1,2 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<plist version="1.0"><dict><key>Label</key><string>com&#46;example.sync-agent</string><key>ProgramArguments</key><array><string>/opt/example/encoded</string></array></dict></plist>

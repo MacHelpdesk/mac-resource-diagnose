@@ -32,6 +32,8 @@ run() { # ps-fixture, then the subcommand and its arguments
   RES_DIAG_USER_AGENTS="$FX/agents_user" \
   RES_DIAG_SYS_AGENTS="$FX/agents_system" \
   RES_DIAG_SYS_DAEMONS="$FX/daemons_system" \
+  RES_DIAG_OS_AGENTS="$FX/agents_os" \
+  RES_DIAG_OS_DAEMONS="${OS_DAEMONS-$FX/daemons_os}" \
   RES_DIAG_LOGIN_ITEMS="$FX/login_items.txt" \
   RES_DIAG_LOCAL_KB=/nonexistent \
   /bin/bash "$TOOL" "$@"
@@ -121,6 +123,122 @@ eq "login-items" "Example Player Sync Thing " "$(run ps_single.txt login-items |
 
 # --- usage
 /bin/bash "$TOOL" >/dev/null 2>&1; eq "no subcommand" "64" "$?"
+usage="$(/bin/bash "$TOOL" 2>&1)"
+printf '%s\n' "$usage" | grep -q 'res-diag.sh login-items' && ok || bad "usage does not list the last subcommand"
+printf '%s\n' "$usage" | grep -q 'Every subcommand reads' && bad "usage runs past the list of subcommands" || ok
+
+# --- probe by resource (docs/spectra/specs/resource-scoped-measurement)
+names() { cut -d= -f1 | tr '\n' ' '; }
+
+# spec-example: resource-scoped-measurement / signals per resource
+eq "probe cpu" "cpu_count process_count cpu_used_pct_per_core top_process_cpu_pct busy_processes busy_group_size load_per_core_pct load5_per_core_pct " \
+  "$(run ps_parallel.txt probe cpu | names)"
+eq "probe memory" "memory_pressure memory_free_pct swap_used_mb " "$(run ps_parallel.txt probe memory | names)"
+eq "probe startup" "startup_user_agents startup_system_items running_third_party_services " "$(run ps_parallel.txt probe startup | names)"
+out="$(run ps_parallel.txt probe gpu 2>/dev/null)"; eq "probe gpu exits 64" "64" "$?"
+eq "probe gpu prints nothing" "" "$out"
+for r in cpu memory startup; do
+  run ps_parallel.txt probe "$r" >/dev/null; eq "probe $r exits 0" "0" "$?"
+done
+
+# spec-example: resource-scoped-measurement / probe arguments outside the form
+OUT="$(mktemp)"
+no_out() { # label, then the probe arguments: exit 64 and not one byte on stdout
+  local label="$1"; shift
+  run ps_parallel.txt probe "$@" > "$OUT" 2>/dev/null; eq "$label exits 64" "64" "$?"
+  [ -s "$OUT" ] && bad "$label wrote to stdout" || ok
+}
+no_out "probe ''" ''
+no_out "probe memory cpu" memory cpu
+no_out "probe --resource memory" --resource memory
+no_out "probe gpu" gpu
+rm -f "$OUT"
+# The script and the knowledge base agree on which signal belongs to which resource.
+for r in cpu memory startup; do
+  eq "signals tagged $r in problems.json" "$(run ps_parallel.txt probe "$r" | cut -d= -f1 | sort | tr '\n' ' ')" \
+    "$(osascript -l JavaScript -e '
+      ObjC.import("Foundation");
+      function run(argv) {
+        var kb = JSON.parse(ObjC.unwrap($.NSString.stringWithContentsOfFileEncodingError(argv[0], $.NSUTF8StringEncoding, null)));
+        return Object.keys(kb.signals).filter(function (k) { return kb.signals[k].resource === argv[1]; }).join("\n");
+      }' plugin/data/problems.json "$r" | sort | tr '\n' ' ')"
+done
+
+# spec-example: resource-scoped-measurement / unscoped probe equals the three scoped probes
+all="$(run ps_parallel.txt probe | sort)"
+parts="$( { run ps_parallel.txt probe cpu; run ps_parallel.txt probe memory; run ps_parallel.txt probe startup; } | sort)"
+eq "unscoped probe equals the three scoped probes" "$parts" "$all"
+eq "unscoped probe has 14 lines" "14" "$(printf '%s\n' "$all" | wc -l | tr -d ' ')"
+
+# spec-example: resource-scoped-measurement / probes run by a match without a file
+# ps, plutil and launchctl are replaced by programs that record their name, so the test
+# sees which probes ran. sysctl is not replaced: its three inputs are given as overrides.
+STUB="$(mktemp -d)"
+for p in ps plutil launchctl; do
+  printf '#!/bin/bash\necho %s >> "$STUB_LOG"\n' "$p" > "$STUB/$p"; chmod +x "$STUB/$p"
+done
+ran() { # arguments of match; prints the recorded program names, sorted, on one line
+  : > "$STUB/log"
+  STUB_LOG="$STUB/log" PATH="$STUB:$PATH" RES_DIAG_NCPU=4 RES_DIAG_LOADAVG='{ 1.00 1.00 1.00 }' \
+    RES_DIAG_PRESSURE=1 RES_DIAG_MEMLEVEL=55 RES_DIAG_SWAP='total = 1.00M  used = 0.00M  free = 1.00M' \
+    RES_DIAG_USER_AGENTS="$FX/agents_user" RES_DIAG_SYS_AGENTS="$FX/agents_system" RES_DIAG_SYS_DAEMONS="$FX/daemons_system" \
+    RES_DIAG_LOCAL_KB=/nonexistent /bin/bash "$TOOL" match "$@" >/dev/null 2>&1
+  sort -u "$STUB/log" | tr '\n' ' '
+}
+eq "match --resource memory runs no other probe" "" "$(ran --resource memory)"
+eq "match --resource cpu runs ps only" "ps " "$(ran --resource cpu)"
+eq "match --resource startup runs plutil and launchctl" "launchctl plutil " "$(ran --resource startup)"
+eq "match --resource general runs every probe" "launchctl plutil ps " "$(ran --resource general)"
+eq "match runs every probe" "launchctl plutil ps " "$(ran)"
+rm -rf "$STUB"
+eq "match --resource memory without a file finds the memory entry" "1" "$(SWAP='total = 1.00M  used = 9000.00M  free = 0M' run ps_parallel.txt match --resource memory | grep -c '^heavy-swap')"
+
+# spec-example: resource-scoped-measurement / a signal that cannot be read is left out
+eq "probe memory without a readable free-memory value" "memory_pressure swap_used_mb " "$(MEMLEVEL=unavailable run ps_parallel.txt probe memory | names)"
+MEMLEVEL=unavailable run ps_parallel.txt probe memory >/dev/null; eq "probe memory with a missing signal exits 0" "0" "$?"
+
+# spec-example: resource-scoped-measurement / label lookups in the fixtures
+lab() { run ps_single.txt label "$@" 2>/dev/null; }
+eq "label used at user level and under the OS folder" \
+  "os-agent${TAB}$FX/agents_os/vendor-renamed.plist user-agent${TAB}$FX/agents_user/com.example.updater.plist " \
+  "$(lab com.example.updater | sort | tr '\n' ' ')"
+eq "label at user level only (a file named after it elsewhere does not count)" \
+  "user-agent${TAB}$FX/agents_user/com.example.keepdict.plist " "$(lab com.example.keepdict | tr '\n' ' ')"
+eq "label of a system daemon" "system-daemon${TAB}$FX/daemons_system/org.example.daemon.plist " "$(lab org.example.daemon | tr '\n' ' ')"
+eq "label that does not exist" "" "$(lab no.such.label)"
+lab no.such.label >/dev/null; eq "label that does not exist exits 0" "0" "$?"
+lab com.example.updater >/dev/null; eq "label lookup exits 0" "0" "$?"
+OUT="$(mktemp)"
+bad_label() { # test name, then the arguments: exit 64 and not one byte on stdout
+  local label="$1"; shift
+  run ps_single.txt label "$@" > "$OUT" 2>/dev/null; eq "$label exits 64" "64" "$?"
+  [ -s "$OUT" ] && bad "$label wrote to stdout" || ok
+}
+bad_label "label 'bad label'" 'bad label'
+bad_label "label" 
+bad_label "label a b" a b
+bad_label "label ''" ''
+bad_label "label with a slash" '../x'
+rm -f "$OUT"
+
+# spec-example: resource-scoped-measurement / a label written with a character reference is found
+eq "label written with a character reference" \
+  "os-agent${TAB}$FX/agents_os/encoded.plist user-agent${TAB}$FX/agents_user/com.example.sync-agent.plist " \
+  "$(lab com.example.sync-agent | sort | tr '\n' ' ')"
+lab com.example.sync-agent >/dev/null; eq "label written with a character reference exits 0" "0" "$?"
+
+# spec-example: resource-scoped-measurement / an unreadable property list makes the lookup incomplete
+ERR="$(mktemp)"
+out="$(OS_DAEMONS="$FX/daemons_broken" run ps_single.txt label com.example.keepdict 2>"$ERR")"; eq "incomplete lookup exits 5" "5" "$?"
+eq "incomplete lookup still prints the match" "user-agent${TAB}$FX/agents_user/com.example.keepdict.plist" "$out"
+grep -q 'broken.plist' "$ERR" && ok || bad "incomplete lookup does not name the unreadable file on stderr"
+grep -q 'gone.plist' "$ERR" && bad "a link whose target is gone is reported as unreadable" || ok
+OS_DAEMONS="$FX/no-such-folder" run ps_single.txt label com.example.keepdict >/dev/null 2>&1; eq "a folder that does not exist is skipped" "0" "$?"
+rm -f "$ERR"
+
+# spec-example: resource-scoped-measurement / an unreadable memory pressure is printed as unknown
+out="$(PRESSURE=unavailable run ps_parallel.txt probe memory)"; eq "probe memory with an unreadable pressure exits 0" "0" "$?"
+expect "$out" "memory_pressure=unknown"
 
 echo "$pass passed, $fail failed"
 [ "$fail" -eq 0 ]

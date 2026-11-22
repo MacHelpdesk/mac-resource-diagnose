@@ -77,5 +77,180 @@ printf '{ broken' > "$TMPD/broken.json"
 eq "a broken personal file leaves the shipped entries" "7" "$(RES_DIAG_LOCAL_KB="$TMPD/broken.json" /bin/bash "$TOOL" list 2>/dev/null | wc -l | tr -d ' ')"
 RES_DIAG_LOCAL_KB="$TMPD/broken.json" /bin/bash "$TOOL" validate >/dev/null 2>&1; eq "validate fails on a broken personal file" "1" "$?"
 
+# --- resources (docs/spectra/specs/resource-scoped-measurement)
+
+# kbfile NAME SIGNALS_JSON PROBLEM_FIELDS: a small knowledge base with one entry
+kbfile() {
+  cat > "$TMPD/$1.json" <<JSON
+{ "schema_version": 1, "signals": { $2 }, "never": [ { "action": "a", "reason": "r" } ],
+  "problems": [ { "id": "one-case", "title": "t", "symptoms": ["s"], $3
+    "cause": "c", "fixes": [ { "id": "look", "action": "a", "class": "user", "evidence": "unverified" } ],
+    "evidence": { "status": "unverified" } } ] }
+JSON
+}
+valid() { RES_DIAG_KB="$TMPD/$1.json" /bin/bash "$TOOL" validate >/dev/null 2>&1 && echo passes || echo fails; }
+LOAD='"load_per_core_pct": { "description": "d", "values": "number", "resource": "cpu" }'
+SWAP='"swap_used_mb": { "description": "d", "values": "number", "resource": "memory" }'
+ON_SWAP='"match": { "all": [ { "signal": "swap_used_mb", "op": "gte", "value": 1 } ] },'
+ON_BOTH='"match": { "all": [ { "signal": "load_per_core_pct", "op": "gte", "value": 1 }, { "signal": "swap_used_mb", "op": "gte", "value": 1 } ] },'
+
+# spec-example: resource-scoped-measurement / resource fields that validate and that do not
+/bin/bash "$TOOL" validate >/dev/null 2>&1 && ok || bad "resource: shipped file does not validate"
+# The entry is general, so only the check on the signal itself can fail this file.
+kbfile nosig "$LOAD, \"swap_used_mb\": { \"description\": \"d\", \"values\": \"number\" }" "\"resource\": \"general\", $ON_SWAP"
+eq "signal without resource" "fails" "$(valid nosig)"
+kbfile badsig "$LOAD, \"swap_used_mb\": { \"description\": \"d\", \"values\": \"number\", \"resource\": \"disk\" }" "\"resource\": \"general\", $ON_SWAP"
+eq "signal with resource disk" "fails" "$(valid badsig)"
+kbfile badentry "$LOAD, $SWAP" "\"resource\": \"network\", $ON_SWAP"
+eq "entry with resource network" "fails" "$(valid badentry)"
+kbfile crossed "$LOAD, $SWAP" "\"resource\": \"cpu\", $ON_SWAP"
+eq "cpu entry with a memory signal" "fails" "$(valid crossed)"
+kbfile general "$LOAD, $SWAP" "\"resource\": \"general\", $ON_BOTH"
+eq "general entry with signals of two resources" "passes" "$(valid general)"
+kbfile sane "$LOAD, $SWAP" "\"resource\": \"memory\", $ON_SWAP"
+eq "memory entry with a memory signal" "passes" "$(valid sane)"
+
+# spec-example: resource-scoped-measurement / shipped entries and their resources
+res_of() { /bin/bash "$TOOL" show "$1" | sed -n 's/^resource: //p'; }
+eq "resource of single-process-busy" "cpu" "$(res_of single-process-busy)"
+eq "resource of many-parallel-jobs" "cpu" "$(res_of many-parallel-jobs)"
+eq "resource of load-above-cpu" "general" "$(res_of load-above-cpu)"
+eq "resource of memory-pressure" "memory" "$(res_of memory-pressure)"
+eq "resource of heavy-swap" "memory" "$(res_of heavy-swap)"
+eq "resource of many-startup-agents" "startup" "$(res_of many-startup-agents)"
+eq "resource of many-background-services" "startup" "$(res_of many-background-services)"
+eq "every shipped entry has a resource field" "7" "$(osascript -l JavaScript -e '
+  ObjC.import("Foundation");
+  function run(argv) {
+    var kb = JSON.parse(ObjC.unwrap($.NSString.stringWithContentsOfFileEncodingError(argv[0], $.NSUTF8StringEncoding, null)));
+    return kb.problems.filter(function (p) { return typeof p.resource === "string"; }).length;
+  }' plugin/data/problems.json)"
+
+# spec-example: resource-scoped-measurement / show prints the resource
+/bin/bash "$TOOL" show heavy-swap | grep -qxF 'resource: memory' && ok || bad "show heavy-swap lacks resource: memory"
+/bin/bash "$TOOL" show load-above-cpu | grep -qxF 'resource: general' && ok || bad "show load-above-cpu lacks resource: general"
+
+# spec-example: resource-scoped-measurement / matching by resource
+printf '%s\n' top_process_cpu_pct=185 busy_group_size=1 load_per_core_pct=60 cpu_used_pct_per_core=50 \
+  memory_pressure=normal swap_used_mb=9000 startup_user_agents=12 running_third_party_services=3 > "$TMPD/mix"
+m() { /bin/bash "$TOOL" match "$@" 2>/dev/null | ids; }
+rc() { /bin/bash "$TOOL" match "$@" >/dev/null 2>&1; echo $?; }
+eq "match FILE" "heavy-swap many-startup-agents single-process-busy " "$(m "$TMPD/mix")"
+eq "match --resource cpu FILE" "single-process-busy " "$(m --resource cpu "$TMPD/mix")"
+eq "match --resource memory FILE" "heavy-swap " "$(m --resource memory "$TMPD/mix")"
+eq "match FILE --resource startup" "many-startup-agents " "$(m "$TMPD/mix" --resource startup)"
+eq "match --resource general FILE" "" "$(m --resource general "$TMPD/mix")"
+eq "match FILE exits 0" "0" "$(rc "$TMPD/mix")"
+eq "match --resource cpu FILE exits 0" "0" "$(rc --resource cpu "$TMPD/mix")"
+eq "match --resource memory FILE exits 0" "0" "$(rc --resource memory "$TMPD/mix")"
+eq "match FILE --resource startup exits 0" "0" "$(rc "$TMPD/mix" --resource startup)"
+/bin/bash "$TOOL" match --resource general "$TMPD/mix" >/dev/null 2>&1; eq "general with no match exits 3" "3" "$?"
+out="$(/bin/bash "$TOOL" match --resource gpu "$TMPD/mix" 2>/dev/null)"; eq "unknown resource exits 64" "64" "$?"
+eq "unknown resource prints nothing" "" "$out"
+/bin/bash "$TOOL" match --resource >/dev/null 2>&1; eq "--resource without a value exits 64" "64" "$?"
+
+# spec-example: resource-scoped-measurement / the cross-resource entry stays out of the cpu scope
+printf '%s\n' top_process_cpu_pct=40 busy_group_size=1 load_per_core_pct=900 cpu_used_pct_per_core=70 > "$TMPD/cross"
+eq "cross entry: match FILE" "load-above-cpu " "$(m "$TMPD/cross")"
+eq "cross entry: general" "load-above-cpu " "$(m --resource general "$TMPD/cross")"
+eq "cross entry: cpu" "" "$(m --resource cpu "$TMPD/cross")"
+eq "cross entry: match FILE exits 0" "0" "$(rc "$TMPD/cross")"
+eq "cross entry: general exits 0" "0" "$(rc --resource general "$TMPD/cross")"
+/bin/bash "$TOOL" match --resource cpu "$TMPD/cross" >/dev/null 2>&1; eq "cross entry: cpu exits 3" "3" "$?"
+
+# spec-example: resource-scoped-measurement / match arguments outside the form
+printf 'cpu_count=8\n' > "$TMPD/other"
+bad_args() { # label, then the arguments: exit 64 and nothing on stdout
+  local label="$1"; shift
+  /bin/bash "$TOOL" match "$@" > "$TMPD/out" 2>/dev/null; eq "$label exits 64" "64" "$?"
+  [ -s "$TMPD/out" ] && bad "$label wrote to stdout" || ok
+}
+bad_args "match --resource '' FILE" --resource '' "$TMPD/mix"
+bad_args "match --resource" --resource
+bad_args "match --resource gpu --resource cpu FILE" --resource gpu --resource cpu "$TMPD/mix"
+bad_args "match --resource cpu --resource cpu FILE" --resource cpu --resource cpu "$TMPD/mix"
+bad_args "match FILE OTHER" "$TMPD/mix" "$TMPD/other"
+bad_args "match --resource=cpu FILE" --resource=cpu "$TMPD/mix"
+bad_args "match ''" ''
+bad_args "match --resource gpu FILE" --resource gpu "$TMPD/mix"
+
+# spec-example: resource-scoped-measurement / control characters in a personal entry
+# The control characters are written by JavaScript, so the JSON file holds the escapes
+# \n and \t and the parsed text holds the characters themselves.
+ctl() { # NAME FIELD VALUE_JS: a personal file whose FIELD is the JavaScript string VALUE_JS
+  osascript -l JavaScript -e '
+    ObjC.import("Foundation");
+    function run(argv) {
+      var p = { id: "fake-case", title: "t", symptoms: ["s"], cause: "c",
+        match: { all: [ { signal: "swap_used_mb", op: "gte", value: 1 } ] },
+        fixes: [ { id: "look", action: "a", class: "user", evidence: "unverified" } ],
+        evidence: { status: "unverified" } };
+      if (argv[1] !== "none") { p[argv[1]] = eval(argv[2]); }
+      var text = JSON.stringify({ schema_version: 1, problems: [p] });
+      $(text).writeToFileAtomicallyEncodingError(argv[0], true, $.NSUTF8StringEncoding, null);
+    }' "$TMPD/$1.json" "$2" "$3"
+}
+ctl_valid() { RES_DIAG_LOCAL_KB="$TMPD/$1.json" /bin/bash "$TOOL" validate >/dev/null 2>&1 && echo passes || echo fails; }
+printf '%s\n' swap_used_mb=9000 memory_pressure=normal > "$TMPD/swap"
+# the lines match prints for one personal file: the ids, and how many lines say shipped
+ctl_ids() { RES_DIAG_LOCAL_KB="$TMPD/$1.json" /bin/bash "$TOOL" match "$TMPD/swap" 2>/dev/null | ids; }
+ctl_shipped() { RES_DIAG_LOCAL_KB="$TMPD/$1.json" /bin/bash "$TOOL" match "$TMPD/swap" 2>/dev/null | grep -c 'shipped'; }
+ctl faketitle title '"t\nsingle-process-busy\tverified\tshipped\tx"'
+eq "title with a newline and tabs" "fails" "$(ctl_valid faketitle)"
+RES_DIAG_LOCAL_KB="$TMPD/faketitle.json" /bin/bash "$TOOL" validate 2>&1 | grep -q '"title" has a control character' && ok || bad "the message for a control character does not name it"
+eq "title with a newline and tabs: only the shipped entry is printed" "heavy-swap " "$(ctl_ids faketitle)"
+eq "title with a newline and tabs: one line says shipped" "1" "$(ctl_shipped faketitle)"
+ctl fakecause cause '"c\n\n來源：隨 plugin 發布"'
+eq "cause with a newline" "fails" "$(ctl_valid fakecause)"
+eq "cause with a newline: only the shipped entry is printed" "heavy-swap " "$(ctl_ids fakecause)"
+ctl plain none '""'
+eq "no control character" "passes" "$(ctl_valid plain)"
+eq "no control character: both entries are printed" "fake-case heavy-swap " "$(ctl_ids plain)"
+# Fields the requirement does not list keep the earlier rule: a line break in the
+# observation of a not_fixes item does not make the personal file invalid.
+osascript -l JavaScript -e '
+  ObjC.import("Foundation");
+  function run(argv) {
+    var p = { id: "fake-case", title: "t", symptoms: ["s"], cause: "c",
+      match: { all: [ { signal: "swap_used_mb", op: "gte", value: 1 } ] },
+      fixes: [ { id: "look", action: "a", class: "user", evidence: "unverified" } ],
+      not_fixes: [ { action: "restart", observed: "first try\nsecond try" } ],
+      evidence: { status: "unverified" } };
+    $(JSON.stringify({ schema_version: 1, problems: [p] })).writeToFileAtomicallyEncodingError(argv[0], true, $.NSUTF8StringEncoding, null);
+  }' "$TMPD/notfix.json"
+eq "a line break in not_fixes still validates" "passes" "$(ctl_valid notfix)"
+eq "a line break in not_fixes: both entries are printed" "fake-case heavy-swap " "$(ctl_ids notfix)"
+
+# spec-example: resource-scoped-measurement / a signal description with a line break still validates
+osascript -l JavaScript -e '
+  ObjC.import("Foundation");
+  function run(argv) {
+    var kb = JSON.parse(ObjC.unwrap($.NSString.stringWithContentsOfFileEncodingError(argv[0], $.NSUTF8StringEncoding, null)));
+    kb.signals.swap_used_mb.description = "first line\nsecond line";
+    $(JSON.stringify(kb)).writeToFileAtomicallyEncodingError(argv[1], true, $.NSUTF8StringEncoding, null);
+  }' plugin/data/problems.json "$TMPD/multiline.json"
+RES_DIAG_KB="$TMPD/multiline.json" /bin/bash "$TOOL" validate >/dev/null 2>&1 && ok || bad "a signal description with a line break does not validate"
+
+# spec-example: skill-boundaries / wording for personal entries
+shown="$(RES_DIAG_LOCAL_KB="$TMPD/local.json" /bin/bash "$TOOL" show my-own-case)"
+printf '%s\n' "$shown" | grep -qF '以正在使用的 skill 的界線為準' && ok || bad "show of a personal entry does not defer to the skill in use"
+printf '%s\n' "$shown" | grep -qF '同意才執行' && bad "show of a personal entry says commands run once agreed" || ok
+
+# spec-example: resource-scoped-measurement / local entry without a resource
+cat > "$TMPD/old.json" <<'JSON'
+{ "schema_version": 1, "problems": [ {
+  "id": "my-case", "title": "t", "symptoms": ["s"],
+  "match": { "all": [ { "signal": "swap_used_mb", "op": "gte", "value": 1 } ] },
+  "cause": "c", "fixes": [ { "id": "look", "action": "a", "class": "user", "evidence": "unverified" } ],
+  "evidence": { "status": "unverified" } } ] }
+JSON
+printf '%s\n' swap_used_mb=5 memory_pressure=normal > "$TMPD/small"
+ml() { RES_DIAG_LOCAL_KB="$TMPD/old.json" /bin/bash "$TOOL" match "$@" 2>/dev/null | ids; }
+RES_DIAG_LOCAL_KB="$TMPD/old.json" /bin/bash "$TOOL" validate >/dev/null 2>&1 && ok || bad "a local entry without resource does not validate"
+eq "local without resource: match FILE" "my-case " "$(ml "$TMPD/small")"
+eq "local without resource: general" "my-case " "$(ml --resource general "$TMPD/small")"
+eq "local without resource: memory" "" "$(ml --resource memory "$TMPD/small")"
+eq "local without resource: show" "general" "$(RES_DIAG_LOCAL_KB="$TMPD/old.json" /bin/bash "$TOOL" show my-case | sed -n 's/^resource: //p')"
+
 echo "$pass passed, $fail failed"
 [ "$fail" -eq 0 ]

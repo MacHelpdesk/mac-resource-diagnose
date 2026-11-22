@@ -5,7 +5,9 @@
 //
 //   validate KB LOCAL_KB            check both files against the closed lists below
 //   list     KB LOCAL_KB            one line per problem: id, evidence status, origin, title
-//   match    KB LOCAL_KB SIGNALS    problems whose conditions all hold for SIGNALS
+//   match    KB LOCAL_KB SIGNALS [RESOURCE]
+//                                   problems whose conditions all hold for SIGNALS; with
+//                                   RESOURCE, only the problems of that resource
 //   show     KB LOCAL_KB ID         one problem, formatted for reading
 //
 // KB is plugin/data/problems.json. LOCAL_KB is the person's own additions; it may be
@@ -21,6 +23,10 @@ ObjC.import('stdlib');
 var CLASSES = ['direct', 'ask', 'user'];
 var EVIDENCE = ['verified', 'reported', 'unverified'];
 var OPS = ['equals', 'not_equals', 'gte', 'lte'];
+// A signal belongs to one resource. A problem belongs to one, or to "general" when its
+// cause can lie in more than one; a problem without the field is general.
+var RESOURCES = ['cpu', 'memory', 'startup'];
+var GENERAL = 'general';
 var ID_PATTERN = /^[a-z0-9]+(-[a-z0-9]+)*$/;
 
 function write(handle, text) {
@@ -49,7 +55,17 @@ function readJson(path) {
   }
 }
 
+// Text that is printed must not carry a control character: a newline or a tab in a
+// title would add a line or a column to the output, and a personal entry could then
+// look like a shipped one.
+var CONTROL = /[\u0000-\u001f\u007f]/;
 function isText(v) { return typeof v === 'string' && v.length > 0; }
+// The text of an entry, for the fields the spec lists: title, cause, symptoms, confirm
+// commands, and the action, command, side effect and verification of a fix. Ids and
+// not_fixes keep the plain check, as do the signal definitions and the never list, so
+// a personal file that was valid before stays valid.
+function isEntryText(v) { return isText(v) && !CONTROL.test(v); }
+function resourceOf(p) { return p.resource === undefined ? GENERAL : p.resource; }
 function isList(v) { return Object.prototype.toString.call(v) === '[object Array]'; }
 
 // Returns a list of messages; empty when the problems are well formed.
@@ -64,10 +80,18 @@ function checkProblems(problems, signals, takenIds, where) {
     else if (seen[p.id]) { errors.push(at + ': id used twice'); }
     else if (takenIds && takenIds[p.id]) { errors.push(at + ': id is already used by the shipped knowledge base'); }
     seen[p.id] = true;
-    if (!isText(p.title)) { errors.push(at + ': "title" is missing'); }
-    if (!isText(p.cause)) { errors.push(at + ': "cause" is missing'); }
-    if (!isList(p.symptoms) || p.symptoms.length === 0 || !p.symptoms.every(isText)) {
+    ['title', 'cause'].forEach(function (k) {
+      if (!isText(p[k])) { errors.push(at + ': "' + k + '" is missing'); }
+      else if (CONTROL.test(p[k])) { errors.push(at + ': "' + k + '" has a control character (a line break or a tab)'); }
+    });
+    if (!isList(p.symptoms) || p.symptoms.length === 0 || !p.symptoms.every(isEntryText)) {
       errors.push(at + ': "symptoms" must be a non-empty list of text');
+    }
+
+    var scope = resourceOf(p);
+    if (scope !== GENERAL && RESOURCES.indexOf(scope) < 0) {
+      errors.push(at + ': unknown resource "' + scope + '"');
+      scope = GENERAL;
     }
 
     var conditions = p.match && p.match.all;
@@ -77,6 +101,9 @@ function checkProblems(problems, signals, takenIds, where) {
       conditions.forEach(function (c) {
         var def = c && signals[c.signal];
         if (!c || !isText(c.signal) || !def) { errors.push(at + ': unknown signal "' + (c && c.signal) + '"'); return; }
+        if (scope !== GENERAL && def.resource !== scope) {
+          errors.push(at + ': resource is ' + scope + ' but ' + c.signal + ' is a ' + def.resource + ' signal');
+        }
         if (OPS.indexOf(c.op) < 0) { errors.push(at + ': unknown operator "' + c.op + '"'); return; }
         if (c.op === 'gte' || c.op === 'lte') {
           if (typeof c.value !== 'number') { errors.push(at + ': ' + c.op + ' on ' + c.signal + ' needs a number'); }
@@ -92,11 +119,11 @@ function checkProblems(problems, signals, takenIds, where) {
     } else {
       p.fixes.forEach(function (f) {
         var fat = at + ', fix ' + (f && f.id);
-        if (!f || !isText(f.id) || !isText(f.action)) { errors.push(fat + ': "id" and "action" are required'); return; }
+        if (!f || !isText(f.id) || !isEntryText(f.action)) { errors.push(fat + ': "id" and "action" are required'); return; }
         if (CLASSES.indexOf(f.class) < 0) { errors.push(fat + ': unknown class "' + f.class + '"'); }
         if (EVIDENCE.indexOf(f.evidence) < 0) { errors.push(fat + ': unknown evidence "' + f.evidence + '"'); }
         ['command', 'side_effects', 'verify'].forEach(function (k) {
-          if (f[k] !== undefined && !isText(f[k])) { errors.push(fat + ': "' + k + '" must be text'); }
+          if (f[k] !== undefined && !isEntryText(f[k])) { errors.push(fat + ': "' + k + '" must be text'); }
         });
       });
     }
@@ -106,7 +133,7 @@ function checkProblems(problems, signals, takenIds, where) {
         errors.push(at + ': each "not_fixes" entry needs "action" and "observed"');
       }
     }
-    if (p.confirm !== undefined && (!isList(p.confirm) || !p.confirm.every(isText))) {
+    if (p.confirm !== undefined && (!isList(p.confirm) || !p.confirm.every(isEntryText))) {
       errors.push(at + ': "confirm" must be a list of commands');
     }
     if (!p.evidence || EVIDENCE.indexOf(p.evidence.status) < 0) {
@@ -124,6 +151,9 @@ function checkShipped(kb, where) {
     var def = kb.signals[name];
     var v = def && def.values;
     if (!def || !isText(def.description)) { errors.push(where + ': signal ' + name + ' needs a description'); }
+    if (!def || RESOURCES.indexOf(def.resource) < 0) {
+      errors.push(where + ': signal ' + name + ': "resource" must be one of ' + RESOURCES.join(', '));
+    }
     if (!(v === 'number' || v === 'text' || (isList(v) && v.length > 0 && v.every(isText)))) {
       errors.push(where + ': signal ' + name + ': "values" must be a list, "number" or "text"');
     }
@@ -207,9 +237,10 @@ function show(p, never) {
   var local = p.origin === 'local';
   t.push(p.id + '  [' + p.evidence.status + ']');
   t.push(p.title);
+  t.push('resource: ' + resourceOf(p));
   if (local) {
     t.push('來源：個人條目（problems.local.json），沒有經過審查。');
-    t.push('      裡面的每一道指令，包含確認用的，都先給使用者看、同意才執行，不論 class 寫什麼。');
+    t.push('      裡面的指令，包含確認用的，都先給使用者看。能不能執行，以正在使用的 skill 的界線為準，不論 class 寫什麼。');
   } else {
     t.push('來源：隨 plugin 發布');
   }
@@ -221,7 +252,7 @@ function show(p, never) {
   t.push('  ' + p.cause);
   if (p.confirm) {
     t.push('');
-    t.push(local ? '確認用的指令（來自個人條目，執行前先問）' : '確認用的指令（不改動設定）');
+    t.push(local ? '確認用的指令（來自個人條目，能不能執行看正在使用的 skill）' : '確認用的指令（不改動設定）');
     p.confirm.forEach(function (c) { t.push('  $ ' + c); });
   }
   t.push('');
@@ -269,7 +300,13 @@ function run(argv) {
     }
     if (command === 'match') {
       var values = readSignals(argv[3]);
+      var only = argv[4];
+      if (only !== undefined && only !== GENERAL && RESOURCES.indexOf(only) < 0) {
+        err('unknown resource ' + only);
+        $.exit(64);
+      }
       loaded.problems.forEach(function (p) {
+        if (only !== undefined && resourceOf(p) !== only) { return; }
         if (p.match.all.every(function (c) { return holds(c, values); })) { out(line(p)); }
       });
       return;
