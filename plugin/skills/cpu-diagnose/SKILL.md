@@ -40,7 +40,7 @@ CPU 忙有兩種很不一樣的情形：一個程序失控，或同一種工作�
 | # | 動作 |
 |---|---|
 | 1 | `res-diag.sh` 的 `probe cpu`、`match --resource cpu`、`list`、`show`、`validate`、`top`、`groups`，以及用來看某個程序是不是 launchd 項目的 `startup`（都只讀） |
-| 2 | `ps`、`sysctl -n`、`id -u`（都只讀），用來看某一個程序的細節，以及它是不是目前這位使用者的 |
+| 2 | `ps`、`sysctl -n`（都只讀），用來看某一個程序的細節 |
 | 3 | 在 `~/.config/mac-resource-diagnose/records/` 寫這次的紀錄 |
 | 4 | 在 `~/.config/mac-resource-diagnose/problems.local.json` 新增條目（格式見 `resource-diagnose` 的〈新增條目〉），寫完跑 `res-diag.sh validate` |
 

@@ -16,7 +16,7 @@
 - `resource-diagnose`、`resource-fix`：量測全部、判斷是哪一種資源。`resource-fix` 自己不動手，判斷之後交給對應的 fix。
 - `cpu-diagnose`、`cpu-fix`、`memory-diagnose`、`memory-fix`、`startup-diagnose`、`startup-fix`：只量測與比對自己的資源。
 - 名稱是 `-diagnose` 的 skill 不帶任何會改動這台 Mac 的指令。`kill <pid>` 只在 `cpu-fix` 與 `memory-fix`，停用 launchd 項目只在 `startup-fix`，讀「登入時打開」的清單只在 `startup-diagnose` 與 `startup-fix`。先問才做的動作與 0.1.0 相同，沒有新增。
-- `*-fix` 動手之前重新認出目標。結束程序：只列出屬於目前使用者的程序，送出時用同一道指令比對使用者編號、啟動時間與程式；這是盡力核對，不是保證。停用項目：系統層有同名的項目時不代為停用；載入的是被同意的 plist 才先卸載、成功才停用；沒有載入的只停用；停用之後分開確認已經卸載與已經停用。
+- `*-fix` 動手之前重新認出目標，問的時候與動手之前各檢查一次，結果不同就重新問。結束程序：只列出屬於目前使用者的程序，問的內容與最後的核對用同一筆程序資料，送出時用同一道指令比對使用者編號、啟動時間與程式；這是盡力核對，不是保證。停用項目：先用 `res-diag.sh label` 確認這個 label 只出現在被同意的那一個使用者層 plist，別的地方也有同名的項目時不代為停用；載入的是被同意的 plist 才先卸載、成功才停用；沒有載入的只停用；停用之後分開確認已經卸載與已經停用。
 - 沒有對到條目不再說成「數字都在正常範圍」；`memory_pressure=unknown` 說成讀不到，不算吃緊。
 - 個人條目的指令只給使用者看，skill 不照那些字串執行。0.1.0 寫的是使用者同意就執行。
 
@@ -25,7 +25,8 @@
 - `res-diag.sh probe cpu|memory|startup`：只量一種資源。
 - `res-diag.sh match --resource cpu|memory|startup|general [FILE]`：只比對一種資源的條目；沒有給檔案時只量那一種資源。
 - `res-diag.sh show ID` 多印一行 `resource:`。
-- `validate` 不接受文字欄位裡的控制字元（換行、tab）；個人檔案有這種欄位時整份被略過並說明原因。
+- `res-diag.sh label LABEL`：列出帶有這個 label 的每一個 launchd plist，涵蓋使用者層、`/Library` 與 `/System/Library`。比對的是檔案裡的 Label。只讀。
+- `validate` 不接受條目文字欄位裡的控制字元（換行、tab）；個人檔案有這種欄位時整份被略過並說明原因。
 - `validate` 多三項檢查：每個訊號要有 `resource`；條目的 `resource` 只能是四種之一；標成某一種資源的條目只能用那一種資源的訊號。
 
 ### Knowledge base
@@ -36,7 +37,7 @@
 
 macOS 27.3，2026-11-22。
 
-- 已實測：`probe` 的三種資源、`match --resource` 的四種值、`show` 的 resource 行，在真的機器上各跑一次。`*-fix` 用來認出目標的三道唯讀指令（`ps -o uid=,lstart=,comm= -p`、`launchctl print`、`launchctl print-disabled`）也各跑過，看過輸出的樣子。
+- 已實測：`probe` 的三種資源、`match --resource` 的四種值、`show` 的 resource 行，在真的機器上各跑一次。`*-fix` 用來認出目標的三道唯讀指令（`ps -o uid=,lstart=,comm= -p`、`launchctl print`、`launchctl print-disabled`）與 `res-diag.sh label` 也各跑過，看過輸出的樣子。
 - 未驗證：八個 skill 只用測試檢查過文字（`tests/test_skills.sh`），沒有用真的對話確認 Claude 會選到對的 skill、會照界線做；`resource-fix` 交給對應 skill 的那一步也沒有跑過。所有解法仍然沒有在這個工具裡執行過。
 
 ## 0.1.0 — 2026-11-22

@@ -59,7 +59,10 @@ function readJson(path) {
 // title would add a line or a column to the output, and a personal entry could then
 // look like a shipped one.
 var CONTROL = /[\u0000-\u001f\u007f]/;
-function isText(v) { return typeof v === 'string' && v.length > 0 && !CONTROL.test(v); }
+function isText(v) { return typeof v === 'string' && v.length > 0; }
+// The text of an entry: used inside checkProblems only, so the definitions of the
+// signals and the never list are held to the same rule as before.
+function isEntryText(v) { return isText(v) && !CONTROL.test(v); }
 function resourceOf(p) { return p.resource === undefined ? GENERAL : p.resource; }
 function isList(v) { return Object.prototype.toString.call(v) === '[object Array]'; }
 
@@ -69,15 +72,15 @@ function checkProblems(problems, signals, takenIds, where) {
   var seen = {};
   if (!isList(problems)) { return [where + ': "problems" must be a list']; }
   problems.forEach(function (p, i) {
-    var at = where + ': problem ' + (p && isText(p.id) ? p.id : '#' + (i + 1));
+    var at = where + ': problem ' + (p && isEntryText(p.id) ? p.id : '#' + (i + 1));
     if (!p || typeof p !== 'object') { errors.push(at + ' is not an object'); return; }
-    if (!isText(p.id) || !ID_PATTERN.test(p.id)) { errors.push(at + ': "id" must be lower-case words joined by hyphens'); }
+    if (!isEntryText(p.id) || !ID_PATTERN.test(p.id)) { errors.push(at + ': "id" must be lower-case words joined by hyphens'); }
     else if (seen[p.id]) { errors.push(at + ': id used twice'); }
     else if (takenIds && takenIds[p.id]) { errors.push(at + ': id is already used by the shipped knowledge base'); }
     seen[p.id] = true;
-    if (!isText(p.title)) { errors.push(at + ': "title" is missing'); }
-    if (!isText(p.cause)) { errors.push(at + ': "cause" is missing'); }
-    if (!isList(p.symptoms) || p.symptoms.length === 0 || !p.symptoms.every(isText)) {
+    if (!isEntryText(p.title)) { errors.push(at + ': "title" is missing'); }
+    if (!isEntryText(p.cause)) { errors.push(at + ': "cause" is missing'); }
+    if (!isList(p.symptoms) || p.symptoms.length === 0 || !p.symptoms.every(isEntryText)) {
       errors.push(at + ': "symptoms" must be a non-empty list of text');
     }
 
@@ -112,21 +115,21 @@ function checkProblems(problems, signals, takenIds, where) {
     } else {
       p.fixes.forEach(function (f) {
         var fat = at + ', fix ' + (f && f.id);
-        if (!f || !isText(f.id) || !isText(f.action)) { errors.push(fat + ': "id" and "action" are required'); return; }
+        if (!f || !isEntryText(f.id) || !isEntryText(f.action)) { errors.push(fat + ': "id" and "action" are required'); return; }
         if (CLASSES.indexOf(f.class) < 0) { errors.push(fat + ': unknown class "' + f.class + '"'); }
         if (EVIDENCE.indexOf(f.evidence) < 0) { errors.push(fat + ': unknown evidence "' + f.evidence + '"'); }
         ['command', 'side_effects', 'verify'].forEach(function (k) {
-          if (f[k] !== undefined && !isText(f[k])) { errors.push(fat + ': "' + k + '" must be text'); }
+          if (f[k] !== undefined && !isEntryText(f[k])) { errors.push(fat + ': "' + k + '" must be text'); }
         });
       });
     }
 
     if (p.not_fixes !== undefined) {
-      if (!isList(p.not_fixes) || !p.not_fixes.every(function (n) { return n && isText(n.action) && isText(n.observed); })) {
+      if (!isList(p.not_fixes) || !p.not_fixes.every(function (n) { return n && isEntryText(n.action) && isEntryText(n.observed); })) {
         errors.push(at + ': each "not_fixes" entry needs "action" and "observed"');
       }
     }
-    if (p.confirm !== undefined && (!isList(p.confirm) || !p.confirm.every(isText))) {
+    if (p.confirm !== undefined && (!isList(p.confirm) || !p.confirm.every(isEntryText))) {
       errors.push(at + ': "confirm" must be a list of commands');
     }
     if (!p.evidence || EVIDENCE.indexOf(p.evidence.status) < 0) {

@@ -191,18 +191,30 @@ ctl() { # NAME FIELD VALUE_JS: a personal file whose FIELD is the JavaScript str
     }' "$TMPD/$1.json" "$2" "$3"
 }
 ctl_valid() { RES_DIAG_LOCAL_KB="$TMPD/$1.json" /bin/bash "$TOOL" validate >/dev/null 2>&1 && echo passes || echo fails; }
-ctl_shipped() { RES_DIAG_LOCAL_KB="$TMPD/$1.json" /bin/bash "$TOOL" match "$TMPD/small" 2>/dev/null | grep -c 'shipped'; }
-printf '%s\n' swap_used_mb=5 memory_pressure=normal > "$TMPD/small"
+printf '%s\n' swap_used_mb=9000 memory_pressure=normal > "$TMPD/swap"
+# the lines match prints for one personal file: the ids, and how many lines say shipped
+ctl_ids() { RES_DIAG_LOCAL_KB="$TMPD/$1.json" /bin/bash "$TOOL" match "$TMPD/swap" 2>/dev/null | ids; }
+ctl_shipped() { RES_DIAG_LOCAL_KB="$TMPD/$1.json" /bin/bash "$TOOL" match "$TMPD/swap" 2>/dev/null | grep -c 'shipped'; }
 ctl faketitle title '"t\nsingle-process-busy\tverified\tshipped\tx"'
 eq "title with a newline and tabs" "fails" "$(ctl_valid faketitle)"
-eq "title with a newline and tabs: no shipped line" "0" "$(ctl_shipped faketitle)"
+eq "title with a newline and tabs: only the shipped entry is printed" "heavy-swap " "$(ctl_ids faketitle)"
+eq "title with a newline and tabs: one line says shipped" "1" "$(ctl_shipped faketitle)"
 ctl fakecause cause '"c\n\n來源：隨 plugin 發布"'
 eq "cause with a newline" "fails" "$(ctl_valid fakecause)"
-eq "cause with a newline: no shipped line" "0" "$(ctl_shipped fakecause)"
+eq "cause with a newline: only the shipped entry is printed" "heavy-swap " "$(ctl_ids fakecause)"
 ctl plain none '""'
 eq "no control character" "passes" "$(ctl_valid plain)"
-eq "no control character: no shipped line" "0" "$(ctl_shipped plain)"
-eq "no control character: the entry matches" "1" "$(RES_DIAG_LOCAL_KB="$TMPD/plain.json" /bin/bash "$TOOL" match "$TMPD/small" 2>/dev/null | grep -c '^fake-case')"
+eq "no control character: both entries are printed" "fake-case heavy-swap " "$(ctl_ids plain)"
+
+# spec-example: resource-scoped-measurement / a signal description with a line break still validates
+osascript -l JavaScript -e '
+  ObjC.import("Foundation");
+  function run(argv) {
+    var kb = JSON.parse(ObjC.unwrap($.NSString.stringWithContentsOfFileEncodingError(argv[0], $.NSUTF8StringEncoding, null)));
+    kb.signals.swap_used_mb.description = "first line\nsecond line";
+    $(JSON.stringify(kb)).writeToFileAtomicallyEncodingError(argv[1], true, $.NSUTF8StringEncoding, null);
+  }' plugin/data/problems.json "$TMPD/multiline.json"
+RES_DIAG_KB="$TMPD/multiline.json" /bin/bash "$TOOL" validate >/dev/null 2>&1 && ok || bad "a signal description with a line break does not validate"
 
 # spec-example: skill-boundaries / wording for personal entries
 shown="$(RES_DIAG_LOCAL_KB="$TMPD/local.json" /bin/bash "$TOOL" show my-own-case)"
@@ -217,6 +229,7 @@ cat > "$TMPD/old.json" <<'JSON'
   "cause": "c", "fixes": [ { "id": "look", "action": "a", "class": "user", "evidence": "unverified" } ],
   "evidence": { "status": "unverified" } } ] }
 JSON
+printf '%s\n' swap_used_mb=5 memory_pressure=normal > "$TMPD/small"
 ml() { RES_DIAG_LOCAL_KB="$TMPD/old.json" /bin/bash "$TOOL" match "$@" 2>/dev/null | ids; }
 RES_DIAG_LOCAL_KB="$TMPD/old.json" /bin/bash "$TOOL" validate >/dev/null 2>&1 && ok || bad "a local entry without resource does not validate"
 eq "local without resource: match FILE" "my-case " "$(ml "$TMPD/small")"

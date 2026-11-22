@@ -32,6 +32,8 @@ run() { # ps-fixture, then the subcommand and its arguments
   RES_DIAG_USER_AGENTS="$FX/agents_user" \
   RES_DIAG_SYS_AGENTS="$FX/agents_system" \
   RES_DIAG_SYS_DAEMONS="$FX/daemons_system" \
+  RES_DIAG_OS_AGENTS="$FX/agents_os" \
+  RES_DIAG_OS_DAEMONS="$FX/daemons_os" \
   RES_DIAG_LOGIN_ITEMS="$FX/login_items.txt" \
   RES_DIAG_LOCAL_KB=/nonexistent \
   /bin/bash "$TOOL" "$@"
@@ -190,6 +192,34 @@ eq "match --resource general runs every probe" "launchctl plutil ps " "$(ran --r
 eq "match runs every probe" "launchctl plutil ps " "$(ran)"
 rm -rf "$STUB"
 eq "match --resource memory without a file finds the memory entry" "1" "$(SWAP='total = 1.00M  used = 9000.00M  free = 0M' run ps_parallel.txt match --resource memory | grep -c '^heavy-swap')"
+
+# spec-example: resource-scoped-measurement / a signal that cannot be read is left out
+eq "probe memory without a readable free-memory value" "memory_pressure swap_used_mb " "$(MEMLEVEL=unavailable run ps_parallel.txt probe memory | names)"
+MEMLEVEL=unavailable run ps_parallel.txt probe memory >/dev/null; eq "probe memory with a missing signal exits 0" "0" "$?"
+
+# spec-example: resource-scoped-measurement / label lookups in the fixtures
+lab() { run ps_single.txt label "$@" 2>/dev/null; }
+eq "label used at user level and under the OS folder" \
+  "os-agent${TAB}$FX/agents_os/vendor-renamed.plist user-agent${TAB}$FX/agents_user/com.example.updater.plist " \
+  "$(lab com.example.updater | sort | tr '\n' ' ')"
+eq "label at user level only (a file named after it elsewhere does not count)" \
+  "user-agent${TAB}$FX/agents_user/com.example.keepdict.plist " "$(lab com.example.keepdict | tr '\n' ' ')"
+eq "label of a system daemon" "system-daemon${TAB}$FX/daemons_system/org.example.daemon.plist " "$(lab org.example.daemon | tr '\n' ' ')"
+eq "label that does not exist" "" "$(lab no.such.label)"
+lab no.such.label >/dev/null; eq "label that does not exist exits 0" "0" "$?"
+lab com.example.updater >/dev/null; eq "label lookup exits 0" "0" "$?"
+OUT="$(mktemp)"
+bad_label() { # label, then the arguments: exit 64 and not one byte on stdout
+  local label="$1"; shift
+  run ps_single.txt label "$@" > "$OUT" 2>/dev/null; eq "$label exits 64" "64" "$?"
+  [ -s "$OUT" ] && bad "$label wrote to stdout" || ok
+}
+bad_label "label 'bad label'" 'bad label'
+bad_label "label" 
+bad_label "label a b" a b
+bad_label "label ''" ''
+bad_label "label with a slash" '../x'
+rm -f "$OUT"
 
 echo "$pass passed, $fail failed"
 [ "$fail" -eq 0 ]

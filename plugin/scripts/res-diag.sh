@@ -27,6 +27,10 @@
 #                                     cpu_pct, rss_mb. Sorted by CPU
 #   res-diag.sh startup               launchd items that can start without being opened:
 #                                     source, label, run_at_load, keep_alive, pid, program
+#   res-diag.sh label LABEL           every launchd property list that carries LABEL, in
+#                                     the user folder, /Library and /System/Library:
+#                                     source, path. Compares the label inside the file,
+#                                     not the file name
 #   res-diag.sh login-items           names in System Settings > Login Items > Open at
 #                                     Login. Asks System Events, so macOS may show a
 #                                     permission prompt the first time
@@ -53,6 +57,8 @@ KBJS="$HERE/kb.js"
 USER_AGENTS="${RES_DIAG_USER_AGENTS:-$HOME/Library/LaunchAgents}"
 SYS_AGENTS="${RES_DIAG_SYS_AGENTS:-/Library/LaunchAgents}"
 SYS_DAEMONS="${RES_DIAG_SYS_DAEMONS:-/Library/LaunchDaemons}"
+OS_AGENTS="${RES_DIAG_OS_AGENTS:-/System/Library/LaunchAgents}"
+OS_DAEMONS="${RES_DIAG_OS_DAEMONS:-/System/Library/LaunchDaemons}"
 TAB="$(printf '\t')"
 
 TMPD=""
@@ -269,6 +275,29 @@ startup() {
   done
 }
 
+# label_sources LABEL: source and path of every property list whose Label is LABEL.
+# launchctl disable records a label, not a file, so a fix has to know every file that
+# carries it. grep only narrows the candidates (the label is stored as plain bytes in
+# both the XML and the binary form); the label read from the file decides.
+label_sources() {
+  local want="$1" source dir f
+  for source in user-agent system-agent system-daemon os-agent os-daemon; do
+    case "$source" in
+      user-agent) dir="$USER_AGENTS" ;;
+      system-agent) dir="$SYS_AGENTS" ;;
+      system-daemon) dir="$SYS_DAEMONS" ;;
+      os-agent) dir="$OS_AGENTS" ;;
+      os-daemon) dir="$OS_DAEMONS" ;;
+    esac
+    [ -d "$dir" ] || continue
+    LC_ALL=C grep -lF -- "$want" "$dir"/*.plist 2>/dev/null | while IFS= read -r f; do
+      [ "$(plist_get "$f" Label)" = "$want" ] || continue
+      printf '%s\t%s\n' "$source" "$(printf '%s' "$f" | tr '[:cntrl:]' '?')"
+    done
+  done
+  return 0
+}
+
 login_items() {
   if [ -n "${RES_DIAG_LOGIN_ITEMS:-}" ]; then cat "$RES_DIAG_LOGIN_ITEMS"; return; fi
   osascript -l JavaScript -e 'Application("System Events").loginItems.name().join("\n")' 2>/dev/null \
@@ -333,6 +362,13 @@ case "${1:-}" in
   top) top "${2:-15}" "${3:-cpu}" ;;
   groups) groups "${2:-15}" ;;
   startup) startup ;;
+  label)
+    [ $# -eq 2 ] || { echo "usage: $0 label LABEL" >&2; exit 64; }
+    case "$2" in
+      ''|*[!A-Za-z0-9._-]*) echo "a label has letters, digits, dots, hyphens and underscores only" >&2; exit 64 ;;
+    esac
+    label_sources "$2"
+    ;;
   login-items) login_items ;;
   # The usage text is the header comment up to its second empty comment line: the
   # summary and the list of subcommands.

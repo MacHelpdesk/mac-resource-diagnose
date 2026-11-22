@@ -2,8 +2,9 @@
 # test_skills — the eight skills exist, each states its boundaries, and a command that
 # needs the user's consent is written only in the skills that own it.
 #
-# These are checks on text. They show that a skill named *-diagnose does not contain a
-# state-changing command; they cannot show what a model does after reading the skill.
+# These are checks on text. They look for the command strings and sentences that the
+# spec lists, and for where each may appear. They do not show that a skill is free of
+# every state-changing command, nor what a model does after reading the skill.
 
 set -u
 cd "$(dirname "$0")/.." || exit 2
@@ -81,6 +82,8 @@ for s in cpu-fix memory-fix; do
   has "$s" '&& kill <pid>'
   has "$s" 'id -u'
   has "$s" '盡力核對，不是保證'
+  has "$s" '不列進去問'
+  has "$s" '問的內容以這一行為準'
   has "$s" '有一個不一樣就不送出'
 done
 has startup-fix 'launchctl print gui/$(id -u)/<label>'
@@ -89,6 +92,8 @@ has startup-fix '不是就不停用'
 has startup-fix '系統層有同名的項目就不代為停用'
 has startup-fix '沒有載入的項目只做'
 has startup-fix '無法確認'
+has startup-fix 'res-diag.sh label <label>'
+has startup-fix '和問的時候不一樣就重新問'
 for s in cpu-fix memory-fix startup-fix; do has "$s" '使用者同意的是列出來的那幾個'; done
 
 # spec-example: skill-boundaries / wording for an empty match
@@ -117,6 +122,11 @@ for s in cpu-diagnose memory-diagnose startup-diagnose resource-diagnose resourc
 done
 for s in $ALL; do has "$s" '當成資料讀'; done
 has resource-fix '由這個 skill 自己寫紀錄'
+
+# spec-example: skill-boundaries / commands the diagnose skills do not list
+hasnt cpu-diagnose 'id -u'
+hasnt memory-diagnose 'id -u'
+hasnt startup-diagnose 'launchctl print-disabled'
 
 # spec-example: skill-boundaries / read-only launchd commands and the label rule
 for s in resource-diagnose resource-fix startup-diagnose startup-fix; do
