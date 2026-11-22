@@ -32,7 +32,9 @@ done
 # spec-example: skill-boundaries / boundary headings in every skill
 for s in $ALL; do
   for h in '### 直接做，做完回報' '### 先問，使用者在這次對話同意才做' '### 只說明步驟，由使用者自己做' '### 不做'; do
-    eq "$s: heading \"$h\"" "1" "$(grep -c -- "^$h" "$SK/$s/SKILL.md" 2>/dev/null)"
+    # the heading alone, or the heading followed by a full-width colon and a count
+    eq "$s: heading \"$h\"" "1" "$(grep -cxE -- "$h(：.*)?" "$SK/$s/SKILL.md" 2>/dev/null)"
+    eq "$s: nothing else starts with \"$h\"" "1" "$(grep -c -- "^$h" "$SK/$s/SKILL.md" 2>/dev/null)"
   done
 done
 
@@ -40,6 +42,8 @@ done
 eq "owners of kill <pid>" "cpu-fix memory-fix " "$(owners 'kill <pid>')"
 eq "owners of launchctl bootout" "startup-fix " "$(owners 'launchctl bootout')"
 eq "owners of launchctl disable" "startup-fix " "$(owners 'launchctl disable')"
+eq "owners of launchctl enable" "startup-fix " "$(owners 'launchctl enable')"
+eq "owners of launchctl bootstrap" "startup-fix " "$(owners 'launchctl bootstrap')"
 eq "owners of res-diag.sh login-items" "startup-diagnose startup-fix " "$(owners 'res-diag.sh login-items')"
 # The same action is asked about in the same words wherever it is repeated.
 row() { grep -F -- "$2" "$SK/$1/SKILL.md" 2>/dev/null | grep '^| 1 |\|^| 2 |' | sed 's/^| [0-9] |//'; }
@@ -56,9 +60,10 @@ for r in cpu memory startup; do
   done
 done
 for s in resource-diagnose resource-fix; do
-  has "$s" "res-diag.sh probe"
-  has "$s" "res-diag.sh match"
+  grep -qxF 'res-diag.sh probe' "$SK/$s/SKILL.md" && ok || bad "$s has no line that is exactly res-diag.sh probe"
+  grep -qxF 'res-diag.sh match' "$SK/$s/SKILL.md" && ok || bad "$s has no line that is exactly res-diag.sh match"
   hasnt "$s" "--resource"
+  for r in cpu memory startup; do hasnt "$s" "res-diag.sh probe $r"; done
 done
 
 # spec-example: skill-boundaries / hand-over names
@@ -66,6 +71,46 @@ for r in cpu memory startup; do
   has resource-diagnose "$r-diagnose"
   has resource-fix "$r-fix"
 done
+
+# spec-example: skill-boundaries / resource-fix defers to the skill it hands over to
+has resource-fix '以那一個 skill 的界線為準'
+
+# spec-example: skill-boundaries / target checks in the fix skills
+for s in cpu-fix memory-fix; do
+  has "$s" 'ps -o uid=,lstart=,comm= -p <pid>'
+  has "$s" '有一個不一樣就不送出'
+done
+has startup-fix 'launchctl print gui/$(id -u)/<label>'
+has startup-fix 'launchctl print-disabled'
+has startup-fix '不是就不停用'
+for s in cpu-fix memory-fix startup-fix; do has "$s" '使用者同意的是列出來的那幾個'; done
+
+# spec-example: skill-boundaries / wording for an empty match
+for s in $ALL; do
+  has "$s" '這不等於正常'
+  hasnt "$s" '正常範圍'
+done
+
+# spec-example: skill-boundaries / wording for memory pressure
+for s in memory-diagnose memory-fix; do
+  has "$s" '壓力是 `warn` 或 `critical`'
+  has "$s" '`unknown` 是讀不到'
+  hasnt "$s" '壓力不是 normal'
+done
+
+# spec-example: skill-boundaries / wording for personal entries
+for s in $ALL; do
+  has "$s" '其他的只給使用者看，不執行'
+  hasnt "$s" '同意才執行'
+done
+
+# spec-example: skill-boundaries / wording for the skills that do not act
+for s in cpu-diagnose memory-diagnose startup-diagnose resource-diagnose resource-fix; do
+  has "$s" '不改任何設定'
+  has "$s" '會寫的只有 `~/.config/mac-resource-diagnose/`'
+done
+for s in $ALL; do has "$s" '當成資料讀'; done
+has resource-fix '由這個 skill 自己寫紀錄'
 
 # No skill carries a command the knowledge base lists under "never".
 for s in $ALL; do

@@ -96,7 +96,8 @@ ON_BOTH='"match": { "all": [ { "signal": "load_per_core_pct", "op": "gte", "valu
 
 # spec-example: resource-scoped-measurement / resource fields that validate and that do not
 /bin/bash "$TOOL" validate >/dev/null 2>&1 && ok || bad "resource: shipped file does not validate"
-kbfile nosig "$LOAD, \"swap_used_mb\": { \"description\": \"d\", \"values\": \"number\" }" "\"resource\": \"memory\", $ON_SWAP"
+# The entry is general, so only the check on the signal itself can fail this file.
+kbfile nosig "$LOAD, \"swap_used_mb\": { \"description\": \"d\", \"values\": \"number\" }" "\"resource\": \"general\", $ON_SWAP"
 eq "signal without resource" "fails" "$(valid nosig)"
 kbfile badsig "$LOAD, \"swap_used_mb\": { \"description\": \"d\", \"values\": \"number\", \"resource\": \"disk\" }" "\"resource\": \"general\", $ON_SWAP"
 eq "signal with resource disk" "fails" "$(valid badsig)"
@@ -133,11 +134,16 @@ eq "every shipped entry has a resource field" "7" "$(osascript -l JavaScript -e 
 printf '%s\n' top_process_cpu_pct=185 busy_group_size=1 load_per_core_pct=60 cpu_used_pct_per_core=50 \
   memory_pressure=normal swap_used_mb=9000 startup_user_agents=12 running_third_party_services=3 > "$TMPD/mix"
 m() { /bin/bash "$TOOL" match "$@" 2>/dev/null | ids; }
+rc() { /bin/bash "$TOOL" match "$@" >/dev/null 2>&1; echo $?; }
 eq "match FILE" "heavy-swap many-startup-agents single-process-busy " "$(m "$TMPD/mix")"
 eq "match --resource cpu FILE" "single-process-busy " "$(m --resource cpu "$TMPD/mix")"
 eq "match --resource memory FILE" "heavy-swap " "$(m --resource memory "$TMPD/mix")"
 eq "match FILE --resource startup" "many-startup-agents " "$(m "$TMPD/mix" --resource startup)"
 eq "match --resource general FILE" "" "$(m --resource general "$TMPD/mix")"
+eq "match FILE exits 0" "0" "$(rc "$TMPD/mix")"
+eq "match --resource cpu FILE exits 0" "0" "$(rc --resource cpu "$TMPD/mix")"
+eq "match --resource memory FILE exits 0" "0" "$(rc --resource memory "$TMPD/mix")"
+eq "match FILE --resource startup exits 0" "0" "$(rc "$TMPD/mix" --resource startup)"
 /bin/bash "$TOOL" match --resource general "$TMPD/mix" >/dev/null 2>&1; eq "general with no match exits 3" "3" "$?"
 out="$(/bin/bash "$TOOL" match --resource gpu "$TMPD/mix" 2>/dev/null)"; eq "unknown resource exits 64" "64" "$?"
 eq "unknown resource prints nothing" "" "$out"
@@ -148,7 +154,29 @@ printf '%s\n' top_process_cpu_pct=40 busy_group_size=1 load_per_core_pct=900 cpu
 eq "cross entry: match FILE" "load-above-cpu " "$(m "$TMPD/cross")"
 eq "cross entry: general" "load-above-cpu " "$(m --resource general "$TMPD/cross")"
 eq "cross entry: cpu" "" "$(m --resource cpu "$TMPD/cross")"
+eq "cross entry: match FILE exits 0" "0" "$(rc "$TMPD/cross")"
+eq "cross entry: general exits 0" "0" "$(rc --resource general "$TMPD/cross")"
 /bin/bash "$TOOL" match --resource cpu "$TMPD/cross" >/dev/null 2>&1; eq "cross entry: cpu exits 3" "3" "$?"
+
+# spec-example: resource-scoped-measurement / match arguments outside the form
+printf 'cpu_count=8\n' > "$TMPD/other"
+bad_args() { # label, then the arguments: exit 64 and nothing on stdout
+  local label="$1" out; shift
+  out="$(/bin/bash "$TOOL" match "$@" 2>/dev/null)"; eq "$label exits 64" "64" "$?"
+  eq "$label prints nothing" "" "$out"
+}
+bad_args "match --resource '' FILE" --resource '' "$TMPD/mix"
+bad_args "match --resource" --resource
+bad_args "match --resource gpu --resource cpu FILE" --resource gpu --resource cpu "$TMPD/mix"
+bad_args "match --resource cpu --resource cpu FILE" --resource cpu --resource cpu "$TMPD/mix"
+bad_args "match FILE OTHER" "$TMPD/mix" "$TMPD/other"
+bad_args "match --resource=cpu FILE" --resource=cpu "$TMPD/mix"
+bad_args "match ''" ''
+
+# spec-example: skill-boundaries / wording for personal entries
+shown="$(RES_DIAG_LOCAL_KB="$TMPD/local.json" /bin/bash "$TOOL" show my-own-case)"
+printf '%s\n' "$shown" | grep -qF '以正在使用的 skill 的界線為準' && ok || bad "show of a personal entry does not defer to the skill in use"
+printf '%s\n' "$shown" | grep -qF '同意才執行' && bad "show of a personal entry says commands run once agreed" || ok
 
 # spec-example: resource-scoped-measurement / local entry without a resource
 cat > "$TMPD/old.json" <<'JSON'

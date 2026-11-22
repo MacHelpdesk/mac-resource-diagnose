@@ -135,7 +135,14 @@ eq "probe memory" "memory_pressure memory_free_pct swap_used_mb " "$(run ps_para
 eq "probe startup" "startup_user_agents startup_system_items running_third_party_services " "$(run ps_parallel.txt probe startup | names)"
 out="$(run ps_parallel.txt probe gpu 2>/dev/null)"; eq "probe gpu exits 64" "64" "$?"
 eq "probe gpu prints nothing" "" "$out"
-run ps_parallel.txt probe cpu >/dev/null; eq "probe cpu exits 0" "0" "$?"
+for r in cpu memory startup; do
+  run ps_parallel.txt probe "$r" >/dev/null; eq "probe $r exits 0" "0" "$?"
+done
+
+# spec-example: resource-scoped-measurement / probe arguments outside the form
+out="$(run ps_parallel.txt probe '' 2>/dev/null)"; eq "probe '' exits 64" "64" "$?"; eq "probe '' prints nothing" "" "$out"
+out="$(run ps_parallel.txt probe memory cpu 2>/dev/null)"; eq "probe memory cpu exits 64" "64" "$?"; eq "probe memory cpu prints nothing" "" "$out"
+out="$(run ps_parallel.txt probe --resource memory 2>/dev/null)"; eq "probe --resource memory exits 64" "64" "$?"; eq "probe --resource memory prints nothing" "" "$out"
 # The script and the knowledge base agree on which signal belongs to which resource.
 for r in cpu memory startup; do
   eq "signals tagged $r in problems.json" "$(run ps_parallel.txt probe "$r" | cut -d= -f1 | sort | tr '\n' ' ')" \
@@ -153,8 +160,28 @@ parts="$( { run ps_parallel.txt probe cpu; run ps_parallel.txt probe memory; run
 eq "unscoped probe equals the three scoped probes" "$parts" "$all"
 eq "unscoped probe has 14 lines" "14" "$(printf '%s\n' "$all" | wc -l | tr -d ' ')"
 
-# A scoped match without a file probes only that resource.
-eq "match --resource memory without a file" "1" "$(SWAP='total = 1.00M  used = 9000.00M  free = 0M' run ps_parallel.txt match --resource memory | grep -c '^heavy-swap')"
+# spec-example: resource-scoped-measurement / probes run by a match without a file
+# ps, plutil and launchctl are replaced by programs that record their name, so the test
+# sees which probes ran. sysctl is not replaced: its three inputs are given as overrides.
+STUB="$(mktemp -d)"
+for p in ps plutil launchctl; do
+  printf '#!/bin/bash\necho %s >> "$STUB_LOG"\n' "$p" > "$STUB/$p"; chmod +x "$STUB/$p"
+done
+ran() { # arguments of match; prints the recorded program names, sorted, on one line
+  : > "$STUB/log"
+  STUB_LOG="$STUB/log" PATH="$STUB:$PATH" RES_DIAG_NCPU=4 RES_DIAG_LOADAVG='{ 1.00 1.00 1.00 }' \
+    RES_DIAG_PRESSURE=1 RES_DIAG_MEMLEVEL=55 RES_DIAG_SWAP='total = 1.00M  used = 0.00M  free = 1.00M' \
+    RES_DIAG_USER_AGENTS="$FX/agents_user" RES_DIAG_SYS_AGENTS="$FX/agents_system" RES_DIAG_SYS_DAEMONS="$FX/daemons_system" \
+    RES_DIAG_LOCAL_KB=/nonexistent /bin/bash "$TOOL" match "$@" >/dev/null 2>&1
+  sort -u "$STUB/log" | tr '\n' ' '
+}
+eq "match --resource memory runs no other probe" "" "$(ran --resource memory)"
+eq "match --resource cpu runs ps only" "ps " "$(ran --resource cpu)"
+eq "match --resource startup runs plutil and launchctl" "launchctl plutil " "$(ran --resource startup)"
+eq "match --resource general runs every probe" "launchctl plutil ps " "$(ran --resource general)"
+eq "match runs every probe" "launchctl plutil ps " "$(ran)"
+rm -rf "$STUB"
+eq "match --resource memory without a file finds the memory entry" "1" "$(SWAP='total = 1.00M  used = 9000.00M  free = 0M' run ps_parallel.txt match --resource memory | grep -c '^heavy-swap')"
 
 echo "$pass passed, $fail failed"
 [ "$fail" -eq 0 ]

@@ -34,7 +34,7 @@ Mac 變慢、風扇一直轉、一登入就很卡時，量測 CPU 負載、記�
 
 ## 八個 skill
 
-每一種資源一對：`diagnose` 只量測與判讀，不改動這台 Mac 的任何東西；`fix` 自己先量一次，再逐項問要不要動手。不知道是哪一種資源時用總入口。
+每一種資源一對：`diagnose` 只量測與判讀，不結束程序、不停用項目、不改設定，會寫的只有 `~/.config/mac-resource-diagnose/` 裡這次的紀錄與你自己的條目；`fix` 自己先量一次，再逐項問要不要動手。不知道是哪一種資源時用總入口。
 
 | 你想做的 | 只想知道原因 | 要動手處理 |
 |---|---|---|
@@ -43,7 +43,7 @@ Mac 變慢、風扇一直轉、一登入就很卡時，量測 CPU 負載、記�
 | 記憶體 | `memory-diagnose` | `memory-fix` |
 | 登入時啟動的項目 | `startup-diagnose` | `startup-fix` |
 
-`resource-fix` 自己不動手：它量測全部、判斷是哪一種資源，再交給那一種的 fix。知識庫的 `load-above-cpu` 原因可能跨資源，只有兩個總入口會比對它。
+`resource-fix` 自己不動手，會寫的也只有同一個資料夾：它量測全部、判斷是哪一種資源，再交給那一種的 fix。知識庫的 `load-above-cpu` 原因可能跨資源，只有兩個總入口會比對它。
 
 從 0.1.0 升級：`resource-diagnose` 不再結束程序或停用項目，那些動作移到 `cpu-fix`、`memory-fix`、`startup-fix`。
 
@@ -74,6 +74,8 @@ bash plugin/scripts/res-diag.sh top 10 mem     # 最佔記憶體的十個程序
 bash plugin/scripts/res-diag.sh startup        # 會自己啟動的 launchd 項目
 bash plugin/scripts/res-diag.sh show heavy-swap
 ```
+
+`probe` 與 `match` 只接受上面這些寫法。空的資源、多出來的參數、第二個檔案、不認得的選項，結束碼都是 64，而且不印任何東西：打錯的參數不會變成「量全部」。沒有對到任何條目時 `match` 的結束碼是 3，這只表示沒有對到已知的狀況，不表示數字正常。
 
 `probe` 的輸出像這樣（數字是舉例）：
 
@@ -112,9 +114,15 @@ running_third_party_services=9
 |---|---|---|
 | 讀「登入時打開」的清單（只讀，但可能跳出權限詢問） | `startup-diagnose`、`startup-fix` | 可能跳出權限詢問 |
 | `kill <pid>`，對象是你自己的、不屬於系統的程序 | `cpu-fix`、`memory-fix` | 是哪個程式、用了多少、沒存檔的內容可能遺失 |
-| 停用一個使用者層的 launchd 項目 | `startup-fix` | 是哪個軟體的、什麼功能會停、怎麼復原 |
+| 停用一個使用者層的 launchd 項目 | `startup-fix` | 是哪個軟體的、什麼功能會停、怎麼復原（先 `launchctl enable` 再重新載入；只登出再登入不會解除停用） |
 
-會改動這台 Mac 的只有後兩件，都只在名稱是 `-fix` 的 skill 裡。`tests/test_skills.sh` 檢查這些指令沒有出現在別的 skill。
+會改動這台 Mac 的只有後兩件，都只在名稱是 `-fix` 的 skill 裡。`tests/test_skills.sh` 檢查這些指令與復原用的指令沒有出現在別的 skill。
+
+同意的是列出來的那幾個目標。動手之前 skill 會重新認出目標，認不出來就不做：
+
+- 結束程序之前，比對使用者編號、啟動時間與程式是不是和問的時候一樣。pid 會被重複使用。
+- 停用項目之前，確認那個 label 現在載入的是 `~/Library/LaunchAgents/` 底下、你同意的那一個 plist。
+- 停用之後分開確認「已經卸載」與「已經停用」。只卸載的項目下次登入會再啟動。
 
 任何情況都不做的事（寫在知識庫的 `never`）：不結束系統的程序、不用 `kill -9` 或 `killall`、不刪除或修改任何 plist 與 app、不執行 `sudo` 也不停用系統層的項目、不執行 `purge` 也不安裝清理軟體。
 
@@ -122,7 +130,7 @@ running_third_party_services=9
 
 這個 repo 只放方法與工具。你的程序清單、裝了哪些軟體、量測紀錄都不在這裡。
 
-- 自己遇過的狀況：`~/.config/mac-resource-diagnose/problems.local.json`，格式見 `resource-diagnose` 的〈新增條目〉。個人條目沒有經過審查，skill 執行裡面的任何指令之前都會先問。
+- 自己遇過的狀況：`~/.config/mac-resource-diagnose/problems.local.json`，格式見 `resource-diagnose` 的〈新增條目〉。個人條目沒有經過審查，也不會讓 skill 能做的事變多：裡面的指令都先給你看，只有屬於那個 skill 界線內的動作才會執行，其他的只給你看。
 - 量測紀錄：`~/.config/mac-resource-diagnose/records/`。
 
 ## 驗證到哪裡
@@ -133,10 +141,11 @@ running_third_party_services=9
 | `probe cpu`、`probe memory`、`probe startup`、`match --resource` 的四種值、`show` 的 resource 行 | 已實測（macOS 27.3，2026-11-22）：各自只印出該資源的訊號或條目 |
 | `login-items` | 已實測一次：在已經給過權限的機器上讀到清單。第一次執行時的權限詢問、按了不允許之後的行為都沒有看過 |
 | 訊號的判讀與門檻 | 只依一台機器的一次量測訂的，沒有和其他機器比較過 |
-| 知識庫七筆的訊號 | 六筆在那一次實際量到；`memory-pressure` 只短暫出現過一次、沒有留下當時的值 |
+| 知識庫七筆的訊號 | 七筆都實際量到過：六筆在 0.1.0 的那一次，`memory-pressure` 在 2026-11-22 的另一次量測（當時是 warn） |
+| 動手前後認出目標用的唯讀指令：`ps -o uid=,lstart=,comm= -p`、`launchctl print`、`launchctl print-disabled` | 指令本身已實測（macOS 27.3，2026-11-22）。pid 被重複使用、同一個 label 兩層都有、停用之後的輸出，這三種情形都沒有實際遇過 |
 | 知識庫的解法：`kill`、`launchctl bootout`／`disable` 與復原 | 未驗證。沒有在這個工具裡執行過，也沒有量過做了之後改善多少 |
-| 腳本對合成輸入的行為 | 只在測試裡驗過（`tests/test_probe.sh` 69 項、`tests/test_kb.sh` 59 項） |
-| 八個 skill 的界線 | 只檢查過文字（`tests/test_skills.sh` 97 項）。Claude 讀了之後是否照做、是否選到對的那一個 skill，沒有用真的對話跑過 |
+| 腳本對合成輸入的行為 | 只在測試裡驗過（`tests/test_probe.sh` 82 項、`tests/test_kb.sh` 81 項） |
+| 八個 skill 的界線 | 只檢查過文字（`tests/test_skills.sh` 205 項）。Claude 讀了之後是否照做、是否選到對的那一個 skill，沒有用真的對話跑過 |
 | 其他 macOS 版本、Intel 的 Mac | 未驗證 |
 
 ## 需求

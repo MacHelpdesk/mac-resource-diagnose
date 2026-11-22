@@ -12,6 +12,7 @@
 #                                     memory, startup or general) only the situations
 #                                     of that resource are compared, and the probe is
 #                                     limited to it. Exit 3: no match.
+#                                     probe and match exit 64 for any other argument
 #   res-diag.sh list                  every known situation
 #   res-diag.sh show ID               one situation: its resource, symptoms, cause, what
 #                                     can be done
@@ -274,30 +275,48 @@ login_items() {
 kb() { osascript -l JavaScript "$KBJS" "$@"; }
 
 case "${1:-}" in
-  probe) probe "${2:-}" ;;
+  probe)
+    # No argument measures everything. Exactly one names a resource. Anything else,
+    # an empty argument included, is a usage error: it must never widen to everything.
+    case $# in
+      1) probe ;;
+      2) case "$2" in
+           cpu|memory|startup) probe "$2" ;;
+           *) echo "resource must be cpu, memory or startup" >&2; exit 64 ;;
+         esac ;;
+      *) echo "usage: $0 probe [cpu|memory|startup]" >&2; exit 64 ;;
+    esac
+    ;;
   match)
     shift
-    resource=""; file=""
+    # scoped and given record that an argument was passed, apart from its value, so an
+    # empty value is refused instead of being read as "not passed".
+    resource=""; scoped=no; file=""; given=no
     while [ $# -gt 0 ]; do
       case "$1" in
         --resource)
           [ $# -ge 2 ] || { echo "--resource needs a value" >&2; exit 64; }
-          resource="$2"; shift 2 ;;
-        *) file="$1"; shift ;;
+          [ "$scoped" = no ] || { echo "--resource given twice" >&2; exit 64; }
+          case "$2" in
+            cpu|memory|startup|general) ;;
+            *) echo "resource must be cpu, memory, startup or general" >&2; exit 64 ;;
+          esac
+          resource="$2"; scoped=yes; shift 2 ;;
+        -*) echo "unknown option" >&2; exit 64 ;;
+        '') echo "empty file name" >&2; exit 64 ;;
+        *)
+          [ "$given" = no ] || { echo "more than one signals file" >&2; exit 64; }
+          file="$1"; given=yes; shift ;;
       esac
     done
-    case "$resource" in
-      ''|cpu|memory|startup|general) ;;
-      *) echo "resource must be cpu, memory, startup or general" >&2; exit 64 ;;
-    esac
     tmpdir
-    if [ -n "$file" ]; then
+    if [ "$given" = yes ]; then
       cp "$file" "$TMPD/signals" || exit 1
     else
       # A general situation may use the signals of any resource.
       case "$resource" in ''|general) probe ;; *) probe "$resource" ;; esac > "$TMPD/signals"
     fi
-    if [ -n "$resource" ]; then
+    if [ "$scoped" = yes ]; then
       kb match "$KB" "$LOCAL_KB" "$TMPD/signals" "$resource" > "$TMPD/matched" || exit 1
     else
       kb match "$KB" "$LOCAL_KB" "$TMPD/signals" > "$TMPD/matched" || exit 1

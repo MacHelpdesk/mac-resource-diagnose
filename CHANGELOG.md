@@ -8,6 +8,7 @@
 
 - **`resource-diagnose` 不再結束程序或停用項目。** 它只量測與判讀。要動手改用 `resource-fix`（不知道是哪一種資源時），或直接用 `cpu-fix`、`memory-fix`、`startup-fix`。
 - 不帶參數的 `res-diag.sh probe` 與 `res-diag.sh match [FILE]` 輸出不變。
+- **`probe` 與 `match` 不再忽略多出來的參數。** 0.1.0 會忽略；現在空的資源、第二個檔案、不認得的選項都是結束碼 64、不印東西。
 - `~/.config/mac-resource-diagnose/problems.local.json` 不必改：沒有 `resource` 欄位的條目算 `general`。
 
 ### Skills
@@ -15,6 +16,9 @@
 - `resource-diagnose`、`resource-fix`：量測全部、判斷是哪一種資源。`resource-fix` 自己不動手，判斷之後交給對應的 fix。
 - `cpu-diagnose`、`cpu-fix`、`memory-diagnose`、`memory-fix`、`startup-diagnose`、`startup-fix`：只量測與比對自己的資源。
 - 名稱是 `-diagnose` 的 skill 不帶任何會改動這台 Mac 的指令。`kill <pid>` 只在 `cpu-fix` 與 `memory-fix`，停用 launchd 項目只在 `startup-fix`，讀「登入時打開」的清單只在 `startup-diagnose` 與 `startup-fix`。先問才做的動作與 0.1.0 相同，沒有新增。
+- `*-fix` 動手之前重新認出目標：結束程序之前比對使用者編號、啟動時間與程式；停用項目之前確認載入的是使用者層、被同意的那一個 plist；停用之後分開確認已經卸載與已經停用。
+- 沒有對到條目不再說成「數字都在正常範圍」；`memory_pressure=unknown` 說成讀不到，不算吃緊。
+- 個人條目的指令只能在正在使用的 skill 的界線內執行，其他的只給使用者看。0.1.0 寫的是使用者同意就執行。
 
 ### Scripts
 
@@ -31,7 +35,7 @@
 
 macOS 27.3，2026-11-22。
 
-- 已實測：`probe` 的三種資源、`match --resource` 的四種值、`show` 的 resource 行，在真的機器上各跑一次。
+- 已實測：`probe` 的三種資源、`match --resource` 的四種值、`show` 的 resource 行，在真的機器上各跑一次。`*-fix` 用來認出目標的三道唯讀指令（`ps -o uid=,lstart=,comm= -p`、`launchctl print`、`launchctl print-disabled`）也各跑過，看過輸出的樣子。
 - 未驗證：八個 skill 只用測試檢查過文字（`tests/test_skills.sh`），沒有用真的對話確認 Claude 會選到對的 skill、會照界線做；`resource-fix` 交給對應 skill 的那一步也沒有跑過。所有解法仍然沒有在這個工具裡執行過。
 
 ## 0.1.0 — 2026-11-22

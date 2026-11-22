@@ -229,7 +229,7 @@ function show(p, never) {
   t.push('resource: ' + resourceOf(p));
   if (local) {
     t.push('來源：個人條目（problems.local.json），沒有經過審查。');
-    t.push('      裡面的每一道指令，包含確認用的，都先給使用者看、同意才執行，不論 class 寫什麼。');
+    t.push('      裡面的指令，包含確認用的，都先給使用者看。能不能執行，以正在使用的 skill 的界線為準，不論 class 寫什麼。');
   } else {
     t.push('來源：隨 plugin 發布');
   }
@@ -241,7 +241,7 @@ function show(p, never) {
   t.push('  ' + p.cause);
   if (p.confirm) {
     t.push('');
-    t.push(local ? '確認用的指令（來自個人條目，執行前先問）' : '確認用的指令（不改動設定）');
+    t.push(local ? '確認用的指令（來自個人條目，能不能執行看正在使用的 skill）' : '確認用的指令（不改動設定）');
     p.confirm.forEach(function (c) { t.push('  $ ' + c); });
   }
   t.push('');
