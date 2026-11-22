@@ -72,7 +72,7 @@ bash plugin/scripts/res-diag.sh match --resource cpu   # 只比對一種資源�
 bash plugin/scripts/res-diag.sh groups 10      # 依 app 加總，最吃 CPU 的十個
 bash plugin/scripts/res-diag.sh top 10 mem     # 最佔記憶體的十個程序
 bash plugin/scripts/res-diag.sh startup        # 會自己啟動的 launchd 項目
-bash plugin/scripts/res-diag.sh label com.example.sync   # 這個 label 出現在哪些 plist，含 /System/Library
+bash plugin/scripts/res-diag.sh label com.example.sync   # 這個 label 出現在哪些 plist，含 /System/Library；結束碼 5 表示有檔案讀不了
 bash plugin/scripts/res-diag.sh show heavy-swap
 ```
 
@@ -121,9 +121,9 @@ running_third_party_services=9
 
 同意的是列出來的那幾個目標。動手之前 skill 會重新認出目標，認不出來就不做：
 
-- 結束程序：只列出屬於你這個使用者的程序，問你的內容取自和最後核對同一筆的程序資料。送出時用同一道指令比對使用者編號、啟動時間與程式，和問的時候不一樣就不送出。這是盡力核對，不是保證：啟動時間只到秒，比對與送出之間仍有極短的空檔。所以 skill 會先請你在 app 裡正常結束。
-- 停用項目：先查這個 label 出現在哪些 plist（`res-diag.sh label`，含 `/Library` 與 `/System/Library`）。只有恰好一個、而且就是你同意的那個使用者層 plist 才繼續；別的地方也有同名的項目時不代為停用，因為停用記的是名稱，另一個也會跟著不啟動。其餘分三種：載入的是你同意的那一個 plist，先卸載、成功才停用；沒有載入，只停用；載入的是別的位置，不做。
-- 這些檢查在問你的時候做一次，動手之前再做一次；結果不同、或要跑的指令和問的時候說的不一樣，就重新問。
+- 結束程序：只列出屬於你這個使用者的程序。問你的程式、啟動時間、CPU 與記憶體取自同一次讀取（前後各讀一次身分，相同才採用），不拿先前量測的數字來配。送出時用同一道指令比對使用者編號、啟動時間與程式，和問的時候不一樣就不送出。這是盡力核對，不是保證：啟動時間只到秒，比對與送出之間仍有極短的空檔。所以 skill 會先請你在 app 裡正常結束。
+- 停用項目：先查這個 label 出現在哪些 plist（`res-diag.sh label`，解析使用者層、`/Library` 與 `/System/Library` 的每一個 plist）。有檔案讀不了時不知道有沒有同名的項目，就不做。只有恰好一個、而且就是你同意的那個使用者層 plist 才繼續，並記下那個檔案的檢查碼；別的地方也有同名的項目時不代為停用，因為停用記的是名稱，另一個也會跟著不啟動。其餘分三種：載入的是你同意的那一個 plist，先卸載、成功才停用；沒有載入，只停用；載入的是別的位置，不做。
+- 這些檢查在問你的時候做一次，動手之前再做一次；結果不同（包含檔案的檢查碼變了）、或要跑的指令和問的時候說的不一樣，就重新問。
 - 停用之後分開確認「已經卸載」與「已經停用」，查不到的說無法確認。
 
 ## 個人的條目與紀錄
@@ -142,16 +142,16 @@ running_third_party_services=9
 | `login-items` | 已實測一次：在已經給過權限的機器上讀到清單。第一次執行時的權限詢問、按了不允許之後的行為都沒有看過 |
 | 訊號的判讀與門檻 | 只依一台機器的一次量測訂的，沒有和其他機器比較過 |
 | 知識庫七筆的訊號 | 七筆都實際量到過：六筆在 0.1.0 的那一次，`memory-pressure` 在 2026-11-22 的另一次量測（當時是 warn） |
-| `res-diag.sh label` | 已實測（macOS 27.3，2026-11-22）：查一個使用者層的 label 與一個不存在的 label，都在一秒內回來；那台機器上有一個 label 同時出現在使用者層與 `/Library`，查得出兩列 |
+| `res-diag.sh label` | 已實測（macOS 27.3，2026-11-22）：解析五個資料夾約九百個 plist，一秒內回來；那台機器上有一個 label 同時出現在使用者層與 `/Library`，查得出兩列；一個指向已不存在檔案的捷徑被略過。讀不了的 plist 與用字元參照寫的 label 只在測試裡驗過 |
 | 動手前後認出目標用的唯讀指令：`ps -o uid=,lstart=,comm= -p`、`launchctl print`、`launchctl print-disabled` | 指令本身已實測（macOS 27.3，2026-11-22），包含 `launchctl print` 對不存在的服務回報 `Could not find service`。pid 被重複使用、同意之後檔案被換掉、沒有載入的項目只停用、停用之後的輸出，這幾種情形都沒有實際遇過 |
 | 知識庫的解法：`kill`、`launchctl bootout`／`disable` 與復原 | 未驗證。沒有在這個工具裡執行過，也沒有量過做了之後改善多少 |
-| 腳本對合成輸入的行為 | 只在測試裡驗過（`tests/test_probe.sh` 102 項、`tests/test_kb.sh` 91 項） |
-| 八個 skill 的界線 | 只檢查過文字（`tests/test_skills.sh` 235 項）。Claude 讀了之後是否照做、是否選到對的那一個 skill，沒有用真的對話跑過 |
+| 腳本對合成輸入的行為 | 只在測試裡驗過（`tests/test_probe.sh` 111 項、`tests/test_kb.sh` 92 項） |
+| 八個 skill 的界線 | 只檢查過文字（`tests/test_skills.sh` 245 項）。Claude 讀了之後是否照做、是否選到對的那一個 skill，沒有用真的對話跑過 |
 | 其他 macOS 版本、Intel 的 Mac | 未驗證 |
 
 ## 需求
 
-- macOS（實測 27.3）。只用系統內建的 `/bin/bash`、`ps`、`sysctl`、`launchctl`、`plutil`、`osascript`，不需要安裝任何東西。
+- macOS（實測 27.3）。只用系統內建的 `/bin/bash`、`ps`、`sysctl`、`launchctl`、`plutil`、`cksum`、`osascript`，不需要安裝任何東西。
 
 ## 開發
 

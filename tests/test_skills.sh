@@ -24,7 +24,8 @@ has()    { grep -qF -- "$2" "$SK/$1/SKILL.md" 2>/dev/null && ok || bad "$1 does 
 hasnt()  { grep -qF -- "$2" "$SK/$1/SKILL.md" 2>/dev/null && bad "$1 contains \"$2\"" || ok; }
 
 # spec-example: skill-boundaries / the eight skill names
-eq "skill directories" "$ALL " "$(ls "$SK" | sort | tr '\n' ' ')"
+# the direct subdirectories, hidden ones included: ls would not show a hidden one
+eq "skill directories" "$ALL " "$(find "$SK" -mindepth 1 -maxdepth 1 -type d | sed 's|.*/||' | sort | tr '\n' ' ')"
 for s in $ALL; do
   eq "$s: frontmatter name" "$s" "$(front "$s" name)"
   [ -n "$(front "$s" description)" ] && ok || bad "$s: description is empty"
@@ -83,7 +84,9 @@ for s in cpu-fix memory-fix; do
   has "$s" 'id -u'
   has "$s" '盡力核對，不是保證'
   has "$s" '不列進去問'
-  has "$s" '問的內容以這一行為準'
+  has "$s" 'ps -o pcpu=,rss= -p <pid>'
+  has "$s" '第一行與第三行要一樣'
+  has "$s" '問的內容都取自這次讀取'
   has "$s" '有一個不一樣就不送出'
 done
 has startup-fix 'launchctl print gui/$(id -u)/<label>'
@@ -94,6 +97,8 @@ has startup-fix '沒有載入的項目只做'
 has startup-fix '無法確認'
 has startup-fix 'res-diag.sh label <label>'
 has startup-fix '和問的時候不一樣就重新問'
+has startup-fix '結束碼不是 0 就不做'
+has startup-fix 'cksum'
 for s in cpu-fix memory-fix startup-fix; do has "$s" '使用者同意的是列出來的那幾個'; done
 
 # spec-example: skill-boundaries / wording for an empty match
@@ -127,6 +132,11 @@ has resource-fix '由這個 skill 自己寫紀錄'
 hasnt cpu-diagnose 'id -u'
 hasnt memory-diagnose 'id -u'
 hasnt startup-diagnose 'launchctl print-disabled'
+hasnt startup-diagnose 'cksum'
+hasnt startup-diagnose 'res-diag.sh label'
+# `label` is also a column of the startup listing, so only the done-directly row is searched
+grep '^| 1 |' "$SK/startup-diagnose/SKILL.md" | grep -qF '`label`' && bad "startup-diagnose lists the label subcommand as done directly" || ok
+grep '^| 1 |' "$SK/startup-fix/SKILL.md" | grep -qF '`label`' && ok || bad "startup-fix does not list the label subcommand as done directly"
 
 # spec-example: skill-boundaries / read-only launchd commands and the label rule
 for s in resource-diagnose resource-fix startup-diagnose startup-fix; do

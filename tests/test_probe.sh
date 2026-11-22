@@ -33,7 +33,7 @@ run() { # ps-fixture, then the subcommand and its arguments
   RES_DIAG_SYS_AGENTS="$FX/agents_system" \
   RES_DIAG_SYS_DAEMONS="$FX/daemons_system" \
   RES_DIAG_OS_AGENTS="$FX/agents_os" \
-  RES_DIAG_OS_DAEMONS="$FX/daemons_os" \
+  RES_DIAG_OS_DAEMONS="${OS_DAEMONS-$FX/daemons_os}" \
   RES_DIAG_LOGIN_ITEMS="$FX/login_items.txt" \
   RES_DIAG_LOCAL_KB=/nonexistent \
   /bin/bash "$TOOL" "$@"
@@ -209,7 +209,7 @@ eq "label that does not exist" "" "$(lab no.such.label)"
 lab no.such.label >/dev/null; eq "label that does not exist exits 0" "0" "$?"
 lab com.example.updater >/dev/null; eq "label lookup exits 0" "0" "$?"
 OUT="$(mktemp)"
-bad_label() { # label, then the arguments: exit 64 and not one byte on stdout
+bad_label() { # test name, then the arguments: exit 64 and not one byte on stdout
   local label="$1"; shift
   run ps_single.txt label "$@" > "$OUT" 2>/dev/null; eq "$label exits 64" "64" "$?"
   [ -s "$OUT" ] && bad "$label wrote to stdout" || ok
@@ -220,6 +220,25 @@ bad_label "label a b" a b
 bad_label "label ''" ''
 bad_label "label with a slash" '../x'
 rm -f "$OUT"
+
+# spec-example: resource-scoped-measurement / a label written with a character reference is found
+eq "label written with a character reference" \
+  "os-agent${TAB}$FX/agents_os/encoded.plist user-agent${TAB}$FX/agents_user/com.example.sync-agent.plist " \
+  "$(lab com.example.sync-agent | sort | tr '\n' ' ')"
+lab com.example.sync-agent >/dev/null; eq "label written with a character reference exits 0" "0" "$?"
+
+# spec-example: resource-scoped-measurement / an unreadable property list makes the lookup incomplete
+ERR="$(mktemp)"
+out="$(OS_DAEMONS="$FX/daemons_broken" run ps_single.txt label com.example.keepdict 2>"$ERR")"; eq "incomplete lookup exits 5" "5" "$?"
+eq "incomplete lookup still prints the match" "user-agent${TAB}$FX/agents_user/com.example.keepdict.plist" "$out"
+grep -q 'broken.plist' "$ERR" && ok || bad "incomplete lookup does not name the unreadable file on stderr"
+grep -q 'gone.plist' "$ERR" && bad "a link whose target is gone is reported as unreadable" || ok
+OS_DAEMONS="$FX/no-such-folder" run ps_single.txt label com.example.keepdict >/dev/null 2>&1; eq "a folder that does not exist is skipped" "0" "$?"
+rm -f "$ERR"
+
+# spec-example: resource-scoped-measurement / an unreadable memory pressure is printed as unknown
+out="$(PRESSURE=unavailable run ps_parallel.txt probe memory)"; eq "probe memory with an unreadable pressure exits 0" "0" "$?"
+expect "$out" "memory_pressure=unknown"
 
 echo "$pass passed, $fail failed"
 [ "$fail" -eq 0 ]

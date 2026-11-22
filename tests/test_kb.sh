@@ -197,6 +197,7 @@ ctl_ids() { RES_DIAG_LOCAL_KB="$TMPD/$1.json" /bin/bash "$TOOL" match "$TMPD/swa
 ctl_shipped() { RES_DIAG_LOCAL_KB="$TMPD/$1.json" /bin/bash "$TOOL" match "$TMPD/swap" 2>/dev/null | grep -c 'shipped'; }
 ctl faketitle title '"t\nsingle-process-busy\tverified\tshipped\tx"'
 eq "title with a newline and tabs" "fails" "$(ctl_valid faketitle)"
+RES_DIAG_LOCAL_KB="$TMPD/faketitle.json" /bin/bash "$TOOL" validate 2>&1 | grep -q '"title" has a control character' && ok || bad "the message for a control character does not name it"
 eq "title with a newline and tabs: only the shipped entry is printed" "heavy-swap " "$(ctl_ids faketitle)"
 eq "title with a newline and tabs: one line says shipped" "1" "$(ctl_shipped faketitle)"
 ctl fakecause cause '"c\n\n來源：隨 plugin 發布"'

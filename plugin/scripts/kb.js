@@ -78,8 +78,10 @@ function checkProblems(problems, signals, takenIds, where) {
     else if (seen[p.id]) { errors.push(at + ': id used twice'); }
     else if (takenIds && takenIds[p.id]) { errors.push(at + ': id is already used by the shipped knowledge base'); }
     seen[p.id] = true;
-    if (!isEntryText(p.title)) { errors.push(at + ': "title" is missing'); }
-    if (!isEntryText(p.cause)) { errors.push(at + ': "cause" is missing'); }
+    ['title', 'cause'].forEach(function (k) {
+      if (!isText(p[k])) { errors.push(at + ': "' + k + '" is missing'); }
+      else if (CONTROL.test(p[k])) { errors.push(at + ': "' + k + '" has a control character (a line break or a tab)'); }
+    });
     if (!isList(p.symptoms) || p.symptoms.length === 0 || !p.symptoms.every(isEntryText)) {
       errors.push(at + ': "symptoms" must be a non-empty list of text');
     }

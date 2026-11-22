@@ -41,7 +41,7 @@ allowed-tools:
 | # | 動作 |
 |---|---|
 | 1 | `res-diag.sh` 的 `probe startup`、`match --resource startup`、`list`、`show`、`validate`、`startup`、`label`、`groups`（都只讀） |
-| 2 | `launchctl list`、`launchctl print gui/<uid>/<label>`、`launchctl print-disabled gui/<uid>`、`plutil -p <plist>`（都只讀），用來看某一個項目的細節 |
+| 2 | `launchctl list`、`launchctl print gui/<uid>/<label>`、`launchctl print-disabled gui/<uid>`、`plutil -p <plist>`、`cksum <plist>`（都只讀），用來看某一個項目的細節，以及它的檔案有沒有變 |
 | 3 | 在 `~/.config/mac-resource-diagnose/records/` 寫這次的紀錄 |
 | 4 | 在 `~/.config/mac-resource-diagnose/problems.local.json` 新增條目（格式見 `resource-diagnose` 的〈新增條目〉），寫完跑 `res-diag.sh validate` |
 
@@ -55,17 +55,18 @@ allowed-tools:
 
 每一個 label 都要個別列出來問。使用者同意的是列出來的那幾個，不是「這一類」，也不是之後才出現的。不只一個時，整理成一張表一次問完。
 
-問之前做下面兩個檢查，動手之前再做一次：
+問之前做下面兩個檢查，動手之前再做一次。問的時候用 `plutil -p <plist>` 把這個項目會執行的程式告訴使用者：
 
-1. 跑 `res-diag.sh label <label>`。它列出這個 label 出現在哪些 plist，包含 `/Library` 與 `/System/Library` 底下的。輸出要恰好一列，source 是 `user-agent`，路徑是要停用的那一個 plist。
+1. 跑 `res-diag.sh label <label>`。它解析五個 launchd 資料夾裡的每一個 plist，列出 label 相同的，包含 `/Library` 與 `/System/Library` 底下的。先看結束碼：結束碼不是 0 就不做。結束碼 5 表示有資料夾或檔案讀不了（stderr 寫出是哪一個），這時不知道別的地方有沒有同名的項目；把讀不了的檔案告訴使用者。結束碼是 0 時，輸出要恰好一列，source 是 `user-agent`，路徑是要停用的那一個 plist。
    - 多於一列：別的地方也有同一個 label。系統層有同名的項目就不代為停用：`launchctl disable` 記的是 label，不是 plist，停用之後另一個項目對這位使用者也不會再啟動，而它沒有被同意。告訴使用者是哪幾個檔案，由他從那個軟體自己的設定處理。
    - 沒有任何一列，或路徑不是那一個 plist：檔案已經變了，不做。
+   - 接著跑 `cksum <plist 路徑>`（路徑放在單引號裡），記下印出的檢查碼與大小。它代表使用者看到、同意的那一份檔案內容。
 2. 跑 `launchctl print gui/$(id -u)/<label>`，分三種情形：
    - 印出的 `path =` 那一行是使用者同意的那一個 plist：先 `bootout`，它成功（結束碼 0）才接著 `disable`。`bootout` 失敗就停下來回報，不接著做。
    - 回報 `Could not find service`：這個項目現在沒有載入。沒有載入的項目只做 `disable` 那一道，不跑 `bootout`。
    - 其他情形（`path =` 指到別的位置、那一行不是 plist 的路徑、指令本身失敗）：不是就不停用，照實告訴使用者看到了什麼。
 
-問的時候把第 2 項的結果說出來：這個項目現在有沒有載入、會跑一道還是兩道指令。動手之前重做這兩個檢查，結果要和問的時候一樣（同一個 plist、同一種情形、同樣幾道指令）。和問的時候不一樣就重新問，不照舊的同意做。
+問的時候把第 2 項的結果說出來：這個項目現在有沒有載入、會跑一道還是兩道指令。動手之前重做這兩個檢查，結果要和問的時候一樣（同一個 plist、同樣的檢查碼與大小、同一種情形、同樣幾道指令）。檢查碼不同表示檔案在同意之後被改過，即使路徑與 label 都沒變。和問的時候不一樣就重新問，不照舊的同意做。
 
 label 來自別的軟體寫的 plist：只含英數字、`.`、`-`、`_` 的 label 才代入指令，不是就不執行、告訴使用者；路徑用單引號包起來，路徑本身含單引號就不執行。
 
@@ -145,7 +146,7 @@ res-diag.sh startup
 | 讀取「登入時打開」的清單 | 已實測一次：在已經給過權限的機器上讀到清單。第一次執行時的權限詢問、按了不允許之後的行為都沒有看過 |
 | 訊號的判讀與門檻 | 只依一台機器的一次量測訂的，沒有和其他機器比較過 |
 | 知識庫的解法：`launchctl` 的停用與復原 | 未驗證。沒有在這個工具裡執行過，也沒有量過做了之後改善多少。沒有載入的項目只停用、同意之後檔案被換掉，這兩種情形也沒有實際遇過 |
-| `res-diag.sh label` | 已實測（macOS 27.3，2026-11-22）：查一個使用者層的 label 與一個不存在的 label，都在一秒內回來；那台機器上有一個 label 同時出現在使用者層與 `/Library`，查得出兩列 |
+| `res-diag.sh label`、`cksum` | 已實測（macOS 27.3，2026-11-22）：解析五個資料夾約九百個 plist，一秒內回來，結束碼 0；那台機器上有一個 label 同時出現在使用者層與 `/Library`，查得出兩列；`/Library/LaunchDaemons` 裡一個指向已不存在檔案的捷徑被略過。讀不了的 plist 只在測試裡驗過 |
 | 動手前後用的 `launchctl print`、`launchctl print-disabled` | 指令本身已實測（macOS 27.3，2026-11-22）：看得到 `path =` 那一行與每個 label 的 enabled／disabled。停用之後的輸出沒有看過，因為沒有停用過任何項目 |
 | Claude 讀了這個 skill 之後是否照界線做 | 未驗證。測試只檢查文字（`tests/test_skills.sh`），沒有用真的對話跑過 |
 | 其他 macOS 版本、Intel 的 Mac | 未驗證 |

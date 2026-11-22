@@ -39,7 +39,7 @@ allowed-tools:
 
 | # | 動作 |
 |---|---|
-| 1 | `res-diag.sh` 的 `probe startup`、`match --resource startup`、`list`、`show`、`validate`、`startup`、`label`、`groups`（都只讀） |
+| 1 | `res-diag.sh` 的 `probe startup`、`match --resource startup`、`list`、`show`、`validate`、`startup`、`groups`（都只讀） |
 | 2 | `launchctl list`、`launchctl print gui/<uid>/<label>`、`plutil -p <plist>`（都只讀），用來看某一個項目的細節 |
 | 3 | 在 `~/.config/mac-resource-diagnose/records/` 寫這次的紀錄 |
 | 4 | 在 `~/.config/mac-resource-diagnose/problems.local.json` 新增條目（格式見 `resource-diagnose` 的〈新增條目〉），寫完跑 `res-diag.sh validate` |
@@ -120,6 +120,5 @@ res-diag.sh startup
 | `probe startup`、`match --resource startup`、`startup` 在真的機器上跑 | 已實測（macOS 27.3，2026-11-22） |
 | 讀取「登入時打開」的清單 | 已實測一次：在已經給過權限的機器上讀到清單。第一次執行時的權限詢問、按了不允許之後的行為都沒有看過 |
 | 訊號的判讀與門檻 | 只依一台機器的一次量測訂的，沒有和其他機器比較過 |
-| `res-diag.sh label` | 已實測（macOS 27.3，2026-11-22）：查一個使用者層的 label 與一個不存在的 label，都在一秒內回來；那台機器上有一個 label 同時出現在使用者層與 `/Library`，查得出兩列 |
 | Claude 讀了這個 skill 之後是否照界線做 | 未驗證。測試只檢查文字（`tests/test_skills.sh`），沒有用真的對話跑過 |
 | 其他 macOS 版本、Intel 的 Mac | 未驗證 |

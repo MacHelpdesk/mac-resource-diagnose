@@ -29,8 +29,9 @@
 #                                     source, label, run_at_load, keep_alive, pid, program
 #   res-diag.sh label LABEL           every launchd property list that carries LABEL, in
 #                                     the user folder, /Library and /System/Library:
-#                                     source, path. Compares the label inside the file,
-#                                     not the file name
+#                                     source, path. Compares the parsed label, not the
+#                                     file name. Exit 5: a folder or file could not be
+#                                     read, so the list may be incomplete
 #   res-diag.sh login-items           names in System Settings > Login Items > Open at
 #                                     Login. Asks System Events, so macOS may show a
 #                                     permission prompt the first time
@@ -277,25 +278,22 @@ startup() {
 
 # label_sources LABEL: source and path of every property list whose Label is LABEL.
 # launchctl disable records a label, not a file, so a fix has to know every file that
-# carries it. grep only narrows the candidates (the label is stored as plain bytes in
-# both the XML and the binary form); the label read from the file decides.
+# carries it. labels.js parses each property list; a folder or file it could not read
+# comes back as an "incomplete" line, which goes to stderr and makes the status 5, so
+# "nothing else has this label" is never confused with "could not look".
 label_sources() {
-  local want="$1" source dir f
-  for source in user-agent system-agent system-daemon os-agent os-daemon; do
-    case "$source" in
-      user-agent) dir="$USER_AGENTS" ;;
-      system-agent) dir="$SYS_AGENTS" ;;
-      system-daemon) dir="$SYS_DAEMONS" ;;
-      os-agent) dir="$OS_AGENTS" ;;
-      os-daemon) dir="$OS_DAEMONS" ;;
-    esac
-    [ -d "$dir" ] || continue
-    LC_ALL=C grep -lF -- "$want" "$dir"/*.plist 2>/dev/null | while IFS= read -r f; do
-      [ "$(plist_get "$f" Label)" = "$want" ] || continue
-      printf '%s\t%s\n' "$source" "$(printf '%s' "$f" | tr '[:cntrl:]' '?')"
-    done
-  done
-  return 0
+  local status=0
+  tmpdir
+  osascript -l JavaScript "$HERE/labels.js" "$1" \
+    user-agent "$USER_AGENTS" system-agent "$SYS_AGENTS" system-daemon "$SYS_DAEMONS" \
+    os-agent "$OS_AGENTS" os-daemon "$OS_DAEMONS" > "$TMPD/labels" 2>/dev/null \
+    || { echo "could not read the launchd folders" >&2; return 5; }
+  awk -F'\t' '$1 != "incomplete" && NF == 2' "$TMPD/labels"
+  if grep -q "^incomplete$TAB" "$TMPD/labels"; then
+    awk -F'\t' '$1 == "incomplete" { print "could not read: " $2 }' "$TMPD/labels" >&2
+    status=5
+  fi
+  return "$status"
 }
 
 login_items() {

@@ -61,4 +61,4 @@ Each `*-diagnose` skill and each entry point SHALL state that it ends no process
 | Skill | Does not contain |
 | --- | --- |
 | cpu-diagnose, memory-diagnose | `id -u` |
-| startup-diagnose | `launchctl print-disabled`, `cksum`, `` `label` `` |
+| startup-diagnose | `launchctl print-disabled`, `cksum`, `res-diag.sh label`; and its done-directly row does not name the `label` subcommand, which the row of startup-fix does |
