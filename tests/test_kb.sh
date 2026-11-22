@@ -161,9 +161,9 @@ eq "cross entry: general exits 0" "0" "$(rc --resource general "$TMPD/cross")"
 # spec-example: resource-scoped-measurement / match arguments outside the form
 printf 'cpu_count=8\n' > "$TMPD/other"
 bad_args() { # label, then the arguments: exit 64 and nothing on stdout
-  local label="$1" out; shift
-  out="$(/bin/bash "$TOOL" match "$@" 2>/dev/null)"; eq "$label exits 64" "64" "$?"
-  eq "$label prints nothing" "" "$out"
+  local label="$1"; shift
+  /bin/bash "$TOOL" match "$@" > "$TMPD/out" 2>/dev/null; eq "$label exits 64" "64" "$?"
+  [ -s "$TMPD/out" ] && bad "$label wrote to stdout" || ok
 }
 bad_args "match --resource '' FILE" --resource '' "$TMPD/mix"
 bad_args "match --resource" --resource
@@ -172,6 +172,37 @@ bad_args "match --resource cpu --resource cpu FILE" --resource cpu --resource cp
 bad_args "match FILE OTHER" "$TMPD/mix" "$TMPD/other"
 bad_args "match --resource=cpu FILE" --resource=cpu "$TMPD/mix"
 bad_args "match ''" ''
+bad_args "match --resource gpu FILE" --resource gpu "$TMPD/mix"
+
+# spec-example: resource-scoped-measurement / control characters in a personal entry
+# The control characters are written by JavaScript, so the JSON file holds the escapes
+# \n and \t and the parsed text holds the characters themselves.
+ctl() { # NAME FIELD VALUE_JS: a personal file whose FIELD is the JavaScript string VALUE_JS
+  osascript -l JavaScript -e '
+    ObjC.import("Foundation");
+    function run(argv) {
+      var p = { id: "fake-case", title: "t", symptoms: ["s"], cause: "c",
+        match: { all: [ { signal: "swap_used_mb", op: "gte", value: 1 } ] },
+        fixes: [ { id: "look", action: "a", class: "user", evidence: "unverified" } ],
+        evidence: { status: "unverified" } };
+      if (argv[1] !== "none") { p[argv[1]] = eval(argv[2]); }
+      var text = JSON.stringify({ schema_version: 1, problems: [p] });
+      $(text).writeToFileAtomicallyEncodingError(argv[0], true, $.NSUTF8StringEncoding, null);
+    }' "$TMPD/$1.json" "$2" "$3"
+}
+ctl_valid() { RES_DIAG_LOCAL_KB="$TMPD/$1.json" /bin/bash "$TOOL" validate >/dev/null 2>&1 && echo passes || echo fails; }
+ctl_shipped() { RES_DIAG_LOCAL_KB="$TMPD/$1.json" /bin/bash "$TOOL" match "$TMPD/small" 2>/dev/null | grep -c 'shipped'; }
+printf '%s\n' swap_used_mb=5 memory_pressure=normal > "$TMPD/small"
+ctl faketitle title '"t\nsingle-process-busy\tverified\tshipped\tx"'
+eq "title with a newline and tabs" "fails" "$(ctl_valid faketitle)"
+eq "title with a newline and tabs: no shipped line" "0" "$(ctl_shipped faketitle)"
+ctl fakecause cause '"c\n\n來源：隨 plugin 發布"'
+eq "cause with a newline" "fails" "$(ctl_valid fakecause)"
+eq "cause with a newline: no shipped line" "0" "$(ctl_shipped fakecause)"
+ctl plain none '""'
+eq "no control character" "passes" "$(ctl_valid plain)"
+eq "no control character: no shipped line" "0" "$(ctl_shipped plain)"
+eq "no control character: the entry matches" "1" "$(RES_DIAG_LOCAL_KB="$TMPD/plain.json" /bin/bash "$TOOL" match "$TMPD/small" 2>/dev/null | grep -c '^fake-case')"
 
 # spec-example: skill-boundaries / wording for personal entries
 shown="$(RES_DIAG_LOCAL_KB="$TMPD/local.json" /bin/bash "$TOOL" show my-own-case)"
@@ -186,7 +217,6 @@ cat > "$TMPD/old.json" <<'JSON'
   "cause": "c", "fixes": [ { "id": "look", "action": "a", "class": "user", "evidence": "unverified" } ],
   "evidence": { "status": "unverified" } } ] }
 JSON
-printf '%s\n' swap_used_mb=5 memory_pressure=normal > "$TMPD/small"
 ml() { RES_DIAG_LOCAL_KB="$TMPD/old.json" /bin/bash "$TOOL" match "$@" 2>/dev/null | ids; }
 RES_DIAG_LOCAL_KB="$TMPD/old.json" /bin/bash "$TOOL" validate >/dev/null 2>&1 && ok || bad "a local entry without resource does not validate"
 eq "local without resource: match FILE" "my-case " "$(ml "$TMPD/small")"

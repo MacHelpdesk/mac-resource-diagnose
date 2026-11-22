@@ -55,7 +55,11 @@ function readJson(path) {
   }
 }
 
-function isText(v) { return typeof v === 'string' && v.length > 0; }
+// Text that is printed must not carry a control character: a newline or a tab in a
+// title would add a line or a column to the output, and a personal entry could then
+// look like a shipped one.
+var CONTROL = /[\u0000-\u001f\u007f]/;
+function isText(v) { return typeof v === 'string' && v.length > 0 && !CONTROL.test(v); }
 function resourceOf(p) { return p.resource === undefined ? GENERAL : p.resource; }
 function isList(v) { return Object.prototype.toString.call(v) === '[object Array]'; }
 

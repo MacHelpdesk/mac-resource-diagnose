@@ -8,7 +8,7 @@
 
 - **`resource-diagnose` 不再結束程序或停用項目。** 它只量測與判讀。要動手改用 `resource-fix`（不知道是哪一種資源時），或直接用 `cpu-fix`、`memory-fix`、`startup-fix`。
 - 不帶參數的 `res-diag.sh probe` 與 `res-diag.sh match [FILE]` 輸出不變。
-- **`probe` 與 `match` 不再忽略多出來的參數。** 0.1.0 會忽略；現在空的資源、第二個檔案、不認得的選項都是結束碼 64、不印東西。
+- **`probe` 與 `match` 不再忽略多出來的參數。** 0.1.0 會忽略；現在空的資源、第二個檔案、不認得的選項都是結束碼 64，stdout 不印東西。
 - `~/.config/mac-resource-diagnose/problems.local.json` 不必改：沒有 `resource` 欄位的條目算 `general`。
 
 ### Skills
@@ -16,15 +16,16 @@
 - `resource-diagnose`、`resource-fix`：量測全部、判斷是哪一種資源。`resource-fix` 自己不動手，判斷之後交給對應的 fix。
 - `cpu-diagnose`、`cpu-fix`、`memory-diagnose`、`memory-fix`、`startup-diagnose`、`startup-fix`：只量測與比對自己的資源。
 - 名稱是 `-diagnose` 的 skill 不帶任何會改動這台 Mac 的指令。`kill <pid>` 只在 `cpu-fix` 與 `memory-fix`，停用 launchd 項目只在 `startup-fix`，讀「登入時打開」的清單只在 `startup-diagnose` 與 `startup-fix`。先問才做的動作與 0.1.0 相同，沒有新增。
-- `*-fix` 動手之前重新認出目標：結束程序之前比對使用者編號、啟動時間與程式；停用項目之前確認載入的是使用者層、被同意的那一個 plist；停用之後分開確認已經卸載與已經停用。
+- `*-fix` 動手之前重新認出目標。結束程序：只列出屬於目前使用者的程序，送出時用同一道指令比對使用者編號、啟動時間與程式；這是盡力核對，不是保證。停用項目：系統層有同名的項目時不代為停用；載入的是被同意的 plist 才先卸載、成功才停用；沒有載入的只停用；停用之後分開確認已經卸載與已經停用。
 - 沒有對到條目不再說成「數字都在正常範圍」；`memory_pressure=unknown` 說成讀不到，不算吃緊。
-- 個人條目的指令只能在正在使用的 skill 的界線內執行，其他的只給使用者看。0.1.0 寫的是使用者同意就執行。
+- 個人條目的指令只給使用者看，skill 不照那些字串執行。0.1.0 寫的是使用者同意就執行。
 
 ### Scripts
 
 - `res-diag.sh probe cpu|memory|startup`：只量一種資源。
 - `res-diag.sh match --resource cpu|memory|startup|general [FILE]`：只比對一種資源的條目；沒有給檔案時只量那一種資源。
 - `res-diag.sh show ID` 多印一行 `resource:`。
+- `validate` 不接受文字欄位裡的控制字元（換行、tab）；個人檔案有這種欄位時整份被略過並說明原因。
 - `validate` 多三項檢查：每個訊號要有 `resource`；條目的 `resource` 只能是四種之一；標成某一種資源的條目只能用那一種資源的訊號。
 
 ### Knowledge base

@@ -7,7 +7,7 @@ allowed-tools:
 
 # startup-diagnose：列出登入時會自己啟動的項目
 
-登入後自己啟動的東西有三個來源：使用者層的 launchd 項目、系統層的 launchd 項目、系統設定裡「登入時打開」的清單。這個 skill 把它們列出來、對照已知狀況、向使用者說明，到這裡為止。它不結束程序、不停用項目、不改任何設定；會寫的只有 `~/.config/mac-resource-diagnose/` 裡這次的紀錄與個人條目。要停用，改用 `startup-fix`。
+登入後自己啟動的東西有三個來源：使用者層的 launchd 項目、系統層的 launchd 項目、系統設定裡「登入時打開」的清單。這個 skill 把它們列出來、對照已知狀況、向使用者說明，到這裡為止。它不結束程序、不停用項目、不改任何設定；會寫的只有 `~/.config/mac-resource-diagnose/` 裡這次的紀錄與個人條目（腳本執行中用的暫存檔不算，結束時就刪掉）。要停用，改用 `startup-fix`。
 
 **實測範圍**：`probe startup`、`match --resource startup`、`startup` 在 macOS 27.3 上實跑過（2026-11-22）；`res-diag.sh login-items` 在已經給過權限的機器上讀到過清單，第一次執行時的權限詢問沒有看過。知識庫的解法都是 `unverified`：沒有任何一個在這個工具裡執行過，也沒有量過做了之後改善多少。跟使用者說明時，把這個狀態一起說出來。
 
@@ -43,6 +43,8 @@ allowed-tools:
 | 2 | `launchctl list`、`launchctl print gui/<uid>/<label>`、`launchctl print-disabled gui/<uid>`、`plutil -p <plist>`（都只讀），用來看某一個項目的細節 |
 | 3 | 在 `~/.config/mac-resource-diagnose/records/` 寫這次的紀錄 |
 | 4 | 在 `~/.config/mac-resource-diagnose/problems.local.json` 新增條目（格式見 `resource-diagnose` 的〈新增條目〉），寫完跑 `res-diag.sh validate` |
+
+label 來自別的軟體寫的 plist：只含英數字、`.`、`-`、`_` 的 label 才代入指令，不是就不執行、告訴使用者；路徑用單引號包起來，路徑本身含單引號就不執行。
 
 ### 先問，使用者在這次對話同意才做：只有這一件
 
@@ -97,7 +99,7 @@ res-diag.sh startup
 
 「登入時打開」的清單要另外問過才讀（見「先問」那一段）。
 
-來源是 `local` 的條目沒有經過審查，也不會讓這個 skill 能做的事變多。裡面的指令，包含確認用的，都先給使用者看；只有屬於上面「直接做」那一段的才執行。其他的只給使用者看，不執行；使用者要照著做時，告訴他改用對應的 fix skill。
+來源是 `local` 的條目沒有經過審查，也不會讓這個 skill 能做的事變多。裡面的指令，包含確認用的，只給使用者看，不照條目裡的字串執行：這個 skill 只執行自己在上面寫出來的指令，參數由它自己從量測結果填。使用者要照條目的做法處理時，告訴他改用對應的 fix skill。
 
 ## Step 3：向使用者說明
 

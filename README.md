@@ -34,7 +34,7 @@ Mac 變慢、風扇一直轉、一登入就很卡時，量測 CPU 負載、記�
 
 ## 八個 skill
 
-每一種資源一對：`diagnose` 只量測與判讀，不結束程序、不停用項目、不改設定，會寫的只有 `~/.config/mac-resource-diagnose/` 裡這次的紀錄與你自己的條目；`fix` 自己先量一次，再逐項問要不要動手。不知道是哪一種資源時用總入口。
+每一種資源一對：`diagnose` 只量測與判讀，不結束程序、不停用項目、不改設定，會寫的只有 `~/.config/mac-resource-diagnose/` 裡這次的紀錄與你自己的條目（腳本執行中用的暫存檔不算，結束時就刪掉）；`fix` 自己先量一次，再逐項問要不要動手。不知道是哪一種資源時用總入口。
 
 | 你想做的 | 只想知道原因 | 要動手處理 |
 |---|---|---|
@@ -75,7 +75,7 @@ bash plugin/scripts/res-diag.sh startup        # 會自己啟動的 launchd 項�
 bash plugin/scripts/res-diag.sh show heavy-swap
 ```
 
-`probe` 與 `match` 只接受上面這些寫法。空的資源、多出來的參數、第二個檔案、不認得的選項，結束碼都是 64，而且不印任何東西：打錯的參數不會變成「量全部」。沒有對到任何條目時 `match` 的結束碼是 3，這只表示沒有對到已知的狀況，不表示數字正常。
+`match` 的 `--resource` 可以寫在檔案前面或後面；`--resource general` 沒有給檔案時會量全部三種資源，因為跨資源的條目可以用任何訊號。除了這些寫法，`probe` 與 `match` 不接受別的：空的資源、多出來的參數、第二個檔案、不認得的選項，結束碼都是 64，stdout 不印任何東西（原因印在 stderr）。打錯的參數不會變成「量全部」。沒有對到任何條目時 `match` 的結束碼是 3，這只表示沒有對到已知的狀況，不表示數字正常。
 
 `probe` 的輸出像這樣（數字是舉例）：
 
@@ -120,17 +120,15 @@ running_third_party_services=9
 
 同意的是列出來的那幾個目標。動手之前 skill 會重新認出目標，認不出來就不做：
 
-- 結束程序之前，比對使用者編號、啟動時間與程式是不是和問的時候一樣。pid 會被重複使用。
-- 停用項目之前，確認那個 label 現在載入的是 `~/Library/LaunchAgents/` 底下、你同意的那一個 plist。
-- 停用之後分開確認「已經卸載」與「已經停用」。只卸載的項目下次登入會再啟動。
-
-任何情況都不做的事（寫在知識庫的 `never`）：不結束系統的程序、不用 `kill -9` 或 `killall`、不刪除或修改任何 plist 與 app、不執行 `sudo` 也不停用系統層的項目、不執行 `purge` 也不安裝清理軟體。
+- 結束程序：只列出屬於你這個使用者的程序。送出時用同一道指令比對使用者編號、啟動時間與程式，和問的時候不一樣就不送出。這是盡力核對，不是保證：啟動時間只到秒，比對與送出之間仍有極短的空檔。所以 skill 會先請你在 app 裡正常結束。
+- 停用項目：系統層有同名的項目時不代為停用，因為停用記的是名稱，系統層的那一個也會跟著不啟動。其餘分三種：載入的是你同意的那一個 plist，先卸載、成功才停用；沒有載入，只停用；載入的是別的位置，不做。
+- 停用之後分開確認「已經卸載」與「已經停用」，查不到的說無法確認。
 
 ## 個人的條目與紀錄
 
 這個 repo 只放方法與工具。你的程序清單、裝了哪些軟體、量測紀錄都不在這裡。
 
-- 自己遇過的狀況：`~/.config/mac-resource-diagnose/problems.local.json`，格式見 `resource-diagnose` 的〈新增條目〉。個人條目沒有經過審查，也不會讓 skill 能做的事變多：裡面的指令都先給你看，只有屬於那個 skill 界線內的動作才會執行，其他的只給你看。
+- 自己遇過的狀況：`~/.config/mac-resource-diagnose/problems.local.json`，格式見 `resource-diagnose` 的〈新增條目〉。個人條目沒有經過審查，也不會讓 skill 能做的事變多：裡面的指令只給你看，skill 不照那些字串執行，只執行它自己寫明的指令。文字欄位含有換行、tab 這類控制字元的個人條目不會通過 `validate`，整份個人檔案會被略過並說明原因。
 - 量測紀錄：`~/.config/mac-resource-diagnose/records/`。
 
 ## 驗證到哪裡
@@ -142,10 +140,10 @@ running_third_party_services=9
 | `login-items` | 已實測一次：在已經給過權限的機器上讀到清單。第一次執行時的權限詢問、按了不允許之後的行為都沒有看過 |
 | 訊號的判讀與門檻 | 只依一台機器的一次量測訂的，沒有和其他機器比較過 |
 | 知識庫七筆的訊號 | 七筆都實際量到過：六筆在 0.1.0 的那一次，`memory-pressure` 在 2026-11-22 的另一次量測（當時是 warn） |
-| 動手前後認出目標用的唯讀指令：`ps -o uid=,lstart=,comm= -p`、`launchctl print`、`launchctl print-disabled` | 指令本身已實測（macOS 27.3，2026-11-22）。pid 被重複使用、同一個 label 兩層都有、停用之後的輸出，這三種情形都沒有實際遇過 |
+| 動手前後認出目標用的唯讀指令：`ps -o uid=,lstart=,comm= -p`、`launchctl print`、`launchctl print-disabled` | 指令本身已實測（macOS 27.3，2026-11-22），包含 `launchctl print` 對不存在的服務回報 `Could not find service`。pid 被重複使用、同一個 label 兩層都有、沒有載入的項目只停用、停用之後的輸出，這幾種情形都沒有實際遇過 |
 | 知識庫的解法：`kill`、`launchctl bootout`／`disable` 與復原 | 未驗證。沒有在這個工具裡執行過，也沒有量過做了之後改善多少 |
-| 腳本對合成輸入的行為 | 只在測試裡驗過（`tests/test_probe.sh` 82 項、`tests/test_kb.sh` 81 項） |
-| 八個 skill 的界線 | 只檢查過文字（`tests/test_skills.sh` 205 項）。Claude 讀了之後是否照做、是否選到對的那一個 skill，沒有用真的對話跑過 |
+| 腳本對合成輸入的行為 | 只在測試裡驗過（`tests/test_probe.sh` 84 項、`tests/test_kb.sh` 90 項） |
+| 八個 skill 的界線 | 只檢查過文字（`tests/test_skills.sh` 226 項）。Claude 讀了之後是否照做、是否選到對的那一個 skill，沒有用真的對話跑過 |
 | 其他 macOS 版本、Intel 的 Mac | 未驗證 |
 
 ## 需求

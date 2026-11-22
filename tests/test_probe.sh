@@ -140,9 +140,17 @@ for r in cpu memory startup; do
 done
 
 # spec-example: resource-scoped-measurement / probe arguments outside the form
-out="$(run ps_parallel.txt probe '' 2>/dev/null)"; eq "probe '' exits 64" "64" "$?"; eq "probe '' prints nothing" "" "$out"
-out="$(run ps_parallel.txt probe memory cpu 2>/dev/null)"; eq "probe memory cpu exits 64" "64" "$?"; eq "probe memory cpu prints nothing" "" "$out"
-out="$(run ps_parallel.txt probe --resource memory 2>/dev/null)"; eq "probe --resource memory exits 64" "64" "$?"; eq "probe --resource memory prints nothing" "" "$out"
+OUT="$(mktemp)"
+no_out() { # label, then the probe arguments: exit 64 and not one byte on stdout
+  local label="$1"; shift
+  run ps_parallel.txt probe "$@" > "$OUT" 2>/dev/null; eq "$label exits 64" "64" "$?"
+  [ -s "$OUT" ] && bad "$label wrote to stdout" || ok
+}
+no_out "probe ''" ''
+no_out "probe memory cpu" memory cpu
+no_out "probe --resource memory" --resource memory
+no_out "probe gpu" gpu
+rm -f "$OUT"
 # The script and the knowledge base agree on which signal belongs to which resource.
 for r in cpu memory startup; do
   eq "signals tagged $r in problems.json" "$(run ps_parallel.txt probe "$r" | cut -d= -f1 | sort | tr '\n' ' ')" \

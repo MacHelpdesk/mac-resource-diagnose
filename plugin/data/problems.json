@@ -389,11 +389,11 @@
         },
         {
           "id": "disable-user-agent",
-          "action": "source 是 user-agent 的項目，經使用者逐項同意後停用",
+          "action": "source 是 user-agent 的項目，經使用者逐項同意後停用。系統層有同名的項目時不代為停用；沒有載入的項目只做 disable 那一道",
           "class": "ask",
-          "command": "launchctl bootout gui/$(id -u)/<label> ; launchctl disable gui/$(id -u)/<label>",
-          "side_effects": "那個軟體的自動更新、同步或選單列圖示會停止，直到復原。復原：launchctl enable gui/$(id -u)/<label>，再 launchctl bootstrap gui/$(id -u) <plist 路徑>，或登出再登入。軟體更新時可能把它重新啟用",
-          "verify": "再跑一次 startup，那個 label 的 pid 欄是 not-loaded",
+          "command": "launchctl bootout gui/$(id -u)/<label> && launchctl disable gui/$(id -u)/<label>",
+          "side_effects": "那個軟體的自動更新、同步或選單列圖示會停止，直到復原。復原：先 launchctl enable gui/$(id -u)/<label>，再 launchctl bootstrap gui/$(id -u) <plist 路徑> 或登出再登入；只登出再登入不會解除停用。軟體更新時可能把它重新啟用",
+          "verify": "再跑一次 startup，那個 label 的 pid 欄是 not-loaded；launchctl print-disabled gui/$(id -u) 裡它是 disabled",
           "evidence": "unverified"
         },
         {

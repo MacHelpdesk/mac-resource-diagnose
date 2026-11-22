@@ -45,16 +45,25 @@ allowed-tools:
 | 3 | 在 `~/.config/mac-resource-diagnose/records/` 寫這次的紀錄 |
 | 4 | 在 `~/.config/mac-resource-diagnose/problems.local.json` 新增條目（格式見 `resource-diagnose` 的〈新增條目〉），寫完跑 `res-diag.sh validate` |
 
+
 ### 先問，使用者在這次對話同意才做：只有這兩件
 
 | # | 動作 | 問的時候要說的 |
 |---|---|---|
 | 1 | `res-diag.sh login-items` | 它會向 System Events 詢問「登入時打開」的清單，第一次執行時 macOS 可能跳出權限詢問；按了不允許就讀不到，可以改請使用者自己到系統設定看 |
-| 2 | 停用一個 source 是 `user-agent` 的項目：`launchctl bootout gui/$(id -u)/<label>`，再 `launchctl disable gui/$(id -u)/<label>` | 它是哪個軟體的、停用後那個軟體的什麼功能會停（自動更新、同步、選單列圖示）；復原要兩步：先 `launchctl enable gui/$(id -u)/<label>`，再 `launchctl bootstrap gui/$(id -u) <plist 路徑>` 或登出再登入。只登出再登入不會解除停用；軟體更新時可能把它重新啟用 |
+| 2 | 停用一個 source 是 `user-agent` 的項目：`launchctl bootout gui/$(id -u)/<label>`，成功之後再 `launchctl disable gui/$(id -u)/<label>`；沒有載入的項目只做後面那一道 | 它是哪個軟體的、plist 的完整路徑、停用後那個軟體的什麼功能會停（自動更新、同步、選單列圖示）；這個項目現在有沒有載入、會跑一道還是兩道指令；復原要兩步：先 `launchctl enable gui/$(id -u)/<label>`，再 `launchctl bootstrap gui/$(id -u) <plist 路徑>` 或登出再登入。只登出再登入不會解除停用；軟體更新時可能把它重新啟用 |
 
 每一個 label 都要個別列出來問。使用者同意的是列出來的那幾個，不是「這一類」，也不是之後才出現的。不只一個時，整理成一張表一次問完。
 
-停用之前，跑 `launchctl print gui/$(id -u)/<label>`，看它的 `path =` 那一行：要是 `~/Library/LaunchAgents/` 底下、使用者同意的那一個 plist。不是就不停用（例如指到 `/Library/` 底下，或那一行不是 plist 的路徑），告訴使用者這個 label 現在載入的不是使用者層的那一份。同一個 label 可以同時存在於使用者層與系統層。
+停用之前做兩個檢查，都通過才動手：
+
+1. 在 `res-diag.sh startup` 的輸出裡找同一個 label。它也出現在 `system-agent` 或 `system-daemon` 那幾列時，系統層有同名的項目就不代為停用：`launchctl disable` 記的是 label，不是 plist，停用之後系統層的那一個對這位使用者也不會再啟動，而它沒有被同意。告訴使用者這個情形，由他從那個軟體自己的設定處理。
+2. 跑 `launchctl print gui/$(id -u)/<label>`，分三種情形：
+   - 印出的 `path =` 那一行是 `~/Library/LaunchAgents/` 底下、使用者同意的那一個 plist：先 `bootout`，它成功（結束碼 0）才接著 `disable`。`bootout` 失敗就停下來回報，不接著做。
+   - 回報 `Could not find service`：這個項目現在沒有載入。確認那個 plist 還在 `~/Library/LaunchAgents/` 底下之後，沒有載入的項目只做 `disable` 那一道，不跑 `bootout`。
+   - 其他情形（`path =` 指到別的位置、那一行不是 plist 的路徑、指令本身失敗）：不是就不停用，照實告訴使用者看到了什麼。
+
+label 來自別的軟體寫的 plist：只含英數字、`.`、`-`、`_` 的 label 才代入指令，不是就不執行、告訴使用者；路徑用單引號包起來，路徑本身含單引號就不執行。
 
 ### 只說明步驟，由使用者自己做：只有這三件
 
@@ -99,7 +108,7 @@ res-diag.sh startup
 
 「登入時打開」的清單要另外問過才讀（見「先問」那一段）。
 
-來源是 `local` 的條目沒有經過審查，也不會讓這個 skill 能做的事變多。裡面的指令，包含確認用的，都先給使用者看；只有屬於上面「直接做」或「先問」那兩段的才執行，「先問」的照樣逐項問。其他的只給使用者看，不執行。
+來源是 `local` 的條目沒有經過審查，也不會讓這個 skill 能做的事變多。裡面的指令，包含確認用的，只給使用者看，不照條目裡的字串執行：這個 skill 只執行自己在上面寫出來的指令，參數由它自己從量測結果填。條目說的做法剛好是上面「先問」的動作時，照那一段逐項問。
 
 ## Step 3：向使用者說明
 
@@ -117,10 +126,10 @@ res-diag.sh startup
 
 停用之後分開確認兩件事，分開回報：
 
-- 已經卸載：`res-diag.sh startup` 那一列的 `pid` 是 `not-loaded`，`launchctl print gui/$(id -u)/<label>` 找不到這個服務。
-- 已經停用，下次登入不會再啟動：`launchctl print-disabled gui/$(id -u)` 裡那個 label 是 `disabled`。
+- 已經卸載：`launchctl print gui/$(id -u)/<label>` 回報 `Could not find service`，`res-diag.sh startup` 那一列的 `pid` 是 `not-loaded`。指令因為別的原因失敗（例如沒有圖形登入階段）時，不算已經卸載，說無法確認。
+- 已經停用：`launchctl print-disabled gui/$(id -u)` 裡那個 label 是 `disabled`。查不到或指令失敗時說無法確認。
 
-只做到其中一件就照實說是哪一件。只卸載而沒有停用的項目，下次登入會再啟動。再跑一次 `res-diag.sh probe startup` 把前後的數字並排。登入變快多少要等下一次登入才知道，照實說。
+只做到其中一件就照實說是哪一件。只卸載而沒有停用的項目，如果它設了 RunAtLoad 或 KeepAlive，下次登入會再啟動。再跑一次 `res-diag.sh probe startup` 把前後的數字並排。登入變快多少要等下一次登入才知道，照實說。
 
 在 `~/.config/mac-resource-diagnose/records/` 寫一個檔，檔名 `YYYY-MM-DDTHHMM±HHMM.md`：停用前後的清單、每個停用的 label 與復原的指令、使用者決定了什麼。這個資料夾是使用者自己的，裡面可以有程式名稱與路徑；這些內容不寫進任何公開的 repo 或 issue。
 
@@ -131,7 +140,7 @@ res-diag.sh startup
 | `probe startup`、`match --resource startup`、`startup` 在真的機器上跑 | 已實測（macOS 27.3，2026-11-22） |
 | 讀取「登入時打開」的清單 | 已實測一次：在已經給過權限的機器上讀到清單。第一次執行時的權限詢問、按了不允許之後的行為都沒有看過 |
 | 訊號的判讀與門檻 | 只依一台機器的一次量測訂的，沒有和其他機器比較過 |
-| 知識庫的解法：`kill`、`launchctl` 的停用與復原 | 未驗證。沒有在這個工具裡執行過，也沒有量過做了之後改善多少 |
+| 知識庫的解法：`launchctl` 的停用與復原 | 未驗證。沒有在這個工具裡執行過，也沒有量過做了之後改善多少。同名項目兩層都有、沒有載入的項目只停用，這兩種情形也沒有實際遇過 |
 | 動手前後用的 `launchctl print`、`launchctl print-disabled` | 指令本身已實測（macOS 27.3，2026-11-22）：看得到 `path =` 那一行與每個 label 的 enabled／disabled。停用之後的輸出沒有看過，因為沒有停用過任何項目 |
 | Claude 讀了這個 skill 之後是否照界線做 | 未驗證。測試只檢查文字（`tests/test_skills.sh`），沒有用真的對話跑過 |
 | 其他 macOS 版本、Intel 的 Mac | 未驗證 |

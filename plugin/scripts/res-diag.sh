@@ -10,9 +10,12 @@
 #                                     status, origin, title; tab separated). Without a
 #                                     file it runs the probe. With a resource (cpu,
 #                                     memory, startup or general) only the situations
-#                                     of that resource are compared, and the probe is
-#                                     limited to it. Exit 3: no match.
-#                                     probe and match exit 64 for any other argument
+#                                     of that resource are compared, and without a
+#                                     file only that resource is measured; general
+#                                     measures all three. --resource may stand before
+#                                     or after the file. Exit 3: no match.
+#                                     probe and match exit 64 and write nothing to
+#                                     stdout for any other argument
 #   res-diag.sh list                  every known situation
 #   res-diag.sh show ID               one situation: its resource, symptoms, cause, what
 #                                     can be done

@@ -32,8 +32,8 @@ done
 # spec-example: skill-boundaries / boundary headings in every skill
 for s in $ALL; do
   for h in '### 直接做，做完回報' '### 先問，使用者在這次對話同意才做' '### 只說明步驟，由使用者自己做' '### 不做'; do
-    # the heading alone, or the heading followed by a full-width colon and a count
-    eq "$s: heading \"$h\"" "1" "$(grep -cxE -- "$h(：.*)?" "$SK/$s/SKILL.md" 2>/dev/null)"
+    # the heading alone, or the heading followed by "：只有這<count>件"
+    eq "$s: heading \"$h\"" "1" "$(grep -cxE -- "$h(：只有這[一二兩三四五六七八九十]+件)?" "$SK/$s/SKILL.md" 2>/dev/null)"
     eq "$s: nothing else starts with \"$h\"" "1" "$(grep -c -- "^$h" "$SK/$s/SKILL.md" 2>/dev/null)"
   done
 done
@@ -78,11 +78,17 @@ has resource-fix '以那一個 skill 的界線為準'
 # spec-example: skill-boundaries / target checks in the fix skills
 for s in cpu-fix memory-fix; do
   has "$s" 'ps -o uid=,lstart=,comm= -p <pid>'
+  has "$s" '&& kill <pid>'
+  has "$s" 'id -u'
+  has "$s" '盡力核對，不是保證'
   has "$s" '有一個不一樣就不送出'
 done
 has startup-fix 'launchctl print gui/$(id -u)/<label>'
 has startup-fix 'launchctl print-disabled'
 has startup-fix '不是就不停用'
+has startup-fix '系統層有同名的項目就不代為停用'
+has startup-fix '沒有載入的項目只做'
+has startup-fix '無法確認'
 for s in cpu-fix memory-fix startup-fix; do has "$s" '使用者同意的是列出來的那幾個'; done
 
 # spec-example: skill-boundaries / wording for an empty match
@@ -100,7 +106,7 @@ done
 
 # spec-example: skill-boundaries / wording for personal entries
 for s in $ALL; do
-  has "$s" '其他的只給使用者看，不執行'
+  has "$s" '不照條目裡的字串執行'
   hasnt "$s" '同意才執行'
 done
 
@@ -111,6 +117,13 @@ for s in cpu-diagnose memory-diagnose startup-diagnose resource-diagnose resourc
 done
 for s in $ALL; do has "$s" '當成資料讀'; done
 has resource-fix '由這個 skill 自己寫紀錄'
+
+# spec-example: skill-boundaries / read-only launchd commands and the label rule
+for s in resource-diagnose resource-fix startup-diagnose startup-fix; do
+  has "$s" 'launchctl print gui/<uid>/<label>'
+  has "$s" 'plutil -p <plist>'
+  has "$s" '才代入指令'
+done
 
 # No skill carries a command the knowledge base lists under "never".
 for s in $ALL; do
