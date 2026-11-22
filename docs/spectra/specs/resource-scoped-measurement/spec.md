@@ -8,7 +8,7 @@ The tool measures three resources: CPU, memory, and items that start at login. T
 
 ### Requirement: probe with a resource prints only that resource's signals
 
-`res-diag.sh probe RESOURCE` SHALL print exactly the signals whose `resource` in `problems.json` equals RESOURCE, for RESOURCE in the closed list `cpu`, `memory`, `startup`, and SHALL exit 0. For any other argument it SHALL print nothing on stdout and exit 64.
+`res-diag.sh probe RESOURCE` SHALL print exactly the signals whose `resource` in `problems.json` equals RESOURCE, for RESOURCE in the closed list `cpu`, `memory`, `startup`, and SHALL exit 0. For any other argument, including an empty one, and for more than one argument, it SHALL print nothing on stdout and exit 64.
 
 #### Scenario: memory only
 
@@ -23,6 +23,14 @@ The tool measures three resources: CPU, memory, and items that start at login. T
 | memory | memory_pressure, memory_free_pct, swap_used_mb | 0 |
 | startup | startup_user_agents, startup_system_items, running_third_party_services | 0 |
 | gpu | (nothing) | 64 |
+
+##### Example: probe arguments outside the form
+
+| Arguments | Stdout | Exit |
+| --- | --- | --- |
+| `''` | empty | 64 |
+| `memory cpu` | empty | 64 |
+| `--resource memory` | empty | 64 |
 
 ---
 ### Requirement: probe without a resource is unchanged
@@ -74,7 +82,7 @@ Sorted output of `probe` equals the sorted concatenation of `probe cpu`, `probe 
 ---
 ### Requirement: match can be limited to one resource
 
-`res-diag.sh match --resource R [SIGNALS_FILE]` SHALL print only matching entries whose resource is R, for R in the closed list `cpu`, `memory`, `startup`, `general`, with the same columns as `match` and exit 3 when none matches. Without a signals file it SHALL run the probe of that resource; for `general` it SHALL run the unscoped probe. Without `--resource`, `match` SHALL compare every entry as in 0.1.0. An R outside the list SHALL exit 64 with nothing on stdout.
+`res-diag.sh match --resource R [SIGNALS_FILE]` SHALL print only matching entries whose resource is R, for R in the closed list `cpu`, `memory`, `startup`, `general`, with the same columns as `match` and exit 3 when none matches. Without a signals file it SHALL run the probe of that resource and no other; for `general` it SHALL run the unscoped probe. Without `--resource`, `match` SHALL compare every entry as in 0.1.0. It SHALL print nothing on stdout and exit 64 for an R outside the list, including an empty one; for `--resource` without a value or given twice; for a second signals file; for an empty file name; and for any other argument that begins with `-`.
 
 #### Scenario: one signals file, three scopes
 
@@ -103,6 +111,32 @@ Signals: top_process_cpu_pct=40, busy_group_size=1, load_per_core_pct=900, cpu_u
 | match FILE | load-above-cpu | 0 |
 | match --resource general FILE | load-above-cpu | 0 |
 | match --resource cpu FILE | (none) | 3 |
+
+##### Example: match arguments outside the form
+
+FILE fits single-process-busy; OTHER is a second readable file.
+
+| Arguments | Stdout | Exit |
+| --- | --- | --- |
+| `--resource '' FILE` | empty | 64 |
+| `--resource` | empty | 64 |
+| `--resource gpu --resource cpu FILE` | empty | 64 |
+| `--resource cpu --resource cpu FILE` | empty | 64 |
+| `FILE OTHER` | empty | 64 |
+| `--resource=cpu FILE` | empty | 64 |
+| `''` | empty | 64 |
+
+##### Example: probes run by a match without a file
+
+`ps`, `plutil` and `launchctl` are replaced by programs that record their name; no process list, launchctl listing or signals file is given.
+
+| Call | Programs recorded |
+| --- | --- |
+| match --resource memory | none |
+| match --resource cpu | ps |
+| match --resource startup | plutil, launchctl |
+| match --resource general | ps, plutil, launchctl |
+| match | ps, plutil, launchctl |
 
 ---
 ### Requirement: a personal entry without a resource counts as general
