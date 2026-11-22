@@ -206,6 +206,20 @@ eq "cause with a newline: only the shipped entry is printed" "heavy-swap " "$(ct
 ctl plain none '""'
 eq "no control character" "passes" "$(ctl_valid plain)"
 eq "no control character: both entries are printed" "fake-case heavy-swap " "$(ctl_ids plain)"
+# Fields the requirement does not list keep the earlier rule: a line break in the
+# observation of a not_fixes item does not make the personal file invalid.
+osascript -l JavaScript -e '
+  ObjC.import("Foundation");
+  function run(argv) {
+    var p = { id: "fake-case", title: "t", symptoms: ["s"], cause: "c",
+      match: { all: [ { signal: "swap_used_mb", op: "gte", value: 1 } ] },
+      fixes: [ { id: "look", action: "a", class: "user", evidence: "unverified" } ],
+      not_fixes: [ { action: "restart", observed: "first try\nsecond try" } ],
+      evidence: { status: "unverified" } };
+    $(JSON.stringify({ schema_version: 1, problems: [p] })).writeToFileAtomicallyEncodingError(argv[0], true, $.NSUTF8StringEncoding, null);
+  }' "$TMPD/notfix.json"
+eq "a line break in not_fixes still validates" "passes" "$(ctl_valid notfix)"
+eq "a line break in not_fixes: both entries are printed" "fake-case heavy-swap " "$(ctl_ids notfix)"
 
 # spec-example: resource-scoped-measurement / a signal description with a line break still validates
 osascript -l JavaScript -e '

@@ -145,7 +145,7 @@ running_third_party_services=9
 | `res-diag.sh label` | 已實測（macOS 27.3，2026-11-22）：解析五個資料夾約九百個 plist，一秒內回來；那台機器上有一個 label 同時出現在使用者層與 `/Library`，查得出兩列；一個指向已不存在檔案的捷徑被略過。讀不了的 plist 與用字元參照寫的 label 只在測試裡驗過 |
 | 動手前後認出目標用的唯讀指令：`ps -o uid=,lstart=,comm= -p`、`launchctl print`、`launchctl print-disabled` | 指令本身已實測（macOS 27.3，2026-11-22），包含 `launchctl print` 對不存在的服務回報 `Could not find service`。pid 被重複使用、同意之後檔案被換掉、沒有載入的項目只停用、停用之後的輸出，這幾種情形都沒有實際遇過 |
 | 知識庫的解法：`kill`、`launchctl bootout`／`disable` 與復原 | 未驗證。沒有在這個工具裡執行過，也沒有量過做了之後改善多少 |
-| 腳本對合成輸入的行為 | 只在測試裡驗過（`tests/test_probe.sh` 111 項、`tests/test_kb.sh` 92 項） |
+| 腳本對合成輸入的行為 | 只在測試裡驗過（`tests/test_probe.sh` 111 項、`tests/test_kb.sh` 94 項） |
 | 八個 skill 的界線 | 只檢查過文字（`tests/test_skills.sh` 245 項）。Claude 讀了之後是否照做、是否選到對的那一個 skill，沒有用真的對話跑過 |
 | 其他 macOS 版本、Intel 的 Mac | 未驗證 |
 

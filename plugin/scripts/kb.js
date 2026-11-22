@@ -60,8 +60,10 @@ function readJson(path) {
 // look like a shipped one.
 var CONTROL = /[\u0000-\u001f\u007f]/;
 function isText(v) { return typeof v === 'string' && v.length > 0; }
-// The text of an entry: used inside checkProblems only, so the definitions of the
-// signals and the never list are held to the same rule as before.
+// The text of an entry, for the fields the spec lists: title, cause, symptoms, confirm
+// commands, and the action, command, side effect and verification of a fix. Ids and
+// not_fixes keep the plain check, as do the signal definitions and the never list, so
+// a personal file that was valid before stays valid.
 function isEntryText(v) { return isText(v) && !CONTROL.test(v); }
 function resourceOf(p) { return p.resource === undefined ? GENERAL : p.resource; }
 function isList(v) { return Object.prototype.toString.call(v) === '[object Array]'; }
@@ -72,9 +74,9 @@ function checkProblems(problems, signals, takenIds, where) {
   var seen = {};
   if (!isList(problems)) { return [where + ': "problems" must be a list']; }
   problems.forEach(function (p, i) {
-    var at = where + ': problem ' + (p && isEntryText(p.id) ? p.id : '#' + (i + 1));
+    var at = where + ': problem ' + (p && isText(p.id) ? p.id : '#' + (i + 1));
     if (!p || typeof p !== 'object') { errors.push(at + ' is not an object'); return; }
-    if (!isEntryText(p.id) || !ID_PATTERN.test(p.id)) { errors.push(at + ': "id" must be lower-case words joined by hyphens'); }
+    if (!isText(p.id) || !ID_PATTERN.test(p.id)) { errors.push(at + ': "id" must be lower-case words joined by hyphens'); }
     else if (seen[p.id]) { errors.push(at + ': id used twice'); }
     else if (takenIds && takenIds[p.id]) { errors.push(at + ': id is already used by the shipped knowledge base'); }
     seen[p.id] = true;
@@ -117,7 +119,7 @@ function checkProblems(problems, signals, takenIds, where) {
     } else {
       p.fixes.forEach(function (f) {
         var fat = at + ', fix ' + (f && f.id);
-        if (!f || !isEntryText(f.id) || !isEntryText(f.action)) { errors.push(fat + ': "id" and "action" are required'); return; }
+        if (!f || !isText(f.id) || !isEntryText(f.action)) { errors.push(fat + ': "id" and "action" are required'); return; }
         if (CLASSES.indexOf(f.class) < 0) { errors.push(fat + ': unknown class "' + f.class + '"'); }
         if (EVIDENCE.indexOf(f.evidence) < 0) { errors.push(fat + ': unknown evidence "' + f.evidence + '"'); }
         ['command', 'side_effects', 'verify'].forEach(function (k) {
@@ -127,7 +129,7 @@ function checkProblems(problems, signals, takenIds, where) {
     }
 
     if (p.not_fixes !== undefined) {
-      if (!isList(p.not_fixes) || !p.not_fixes.every(function (n) { return n && isEntryText(n.action) && isEntryText(n.observed); })) {
+      if (!isList(p.not_fixes) || !p.not_fixes.every(function (n) { return n && isText(n.action) && isText(n.observed); })) {
         errors.push(at + ': each "not_fixes" entry needs "action" and "observed"');
       }
     }
