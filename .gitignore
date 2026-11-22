@@ -12,3 +12,4 @@ records/
 
 # Spectra app data
 .spectra/
+docs/spectra/.vector-search.db*
