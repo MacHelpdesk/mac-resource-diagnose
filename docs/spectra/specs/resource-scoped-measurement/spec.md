@@ -8,7 +8,7 @@ The tool measures three resources: CPU, memory, and items that start at login. T
 
 ### Requirement: probe with a resource prints only that resource's signals
 
-`res-diag.sh probe RESOURCE` SHALL print only signals whose `resource` in `problems.json` equals RESOURCE, for RESOURCE in the closed list `cpu`, `memory`, `startup`, and SHALL exit 0. It SHALL print every such signal that it can read and SHALL leave out a signal whose input cannot be read, instead of printing a number for it. For any other argument, including an empty one, and for more than one argument, it SHALL print nothing on stdout and exit 64.
+`res-diag.sh probe RESOURCE` SHALL print only signals whose `resource` in `problems.json` equals RESOURCE, for RESOURCE in the closed list `cpu`, `memory`, `startup`, and SHALL exit 0. It SHALL print every such signal that it can read. A signal whose input cannot be read SHALL be left out instead of printed as a number, with one exception: `memory_pressure` SHALL be printed with the value `unknown`. For any other argument, including an empty one, and for more than one argument, it SHALL print nothing on stdout and exit 64.
 
 #### Scenario: memory only
 
@@ -39,6 +39,14 @@ The free-memory input is the text `unavailable` instead of a number.
 | Call | Signal names printed | Exit |
 | --- | --- | --- |
 | probe memory | memory_pressure, swap_used_mb | 0 |
+
+##### Example: an unreadable memory pressure is printed as unknown
+
+The pressure input is the text `unavailable`.
+
+| Call | Line printed for the pressure | Exit |
+| --- | --- | --- |
+| probe memory | `memory_pressure=unknown` | 0 |
 
 ---
 ### Requirement: probe without a resource is unchanged
@@ -211,7 +219,7 @@ A knowledge base whose only difference from a valid one is a line break inside t
 ---
 ### Requirement: label lists every property list that carries a label
 
-`res-diag.sh label LABEL` SHALL print one line, `source` and path separated by a tab, for every property list whose `Label` equals LABEL in the user LaunchAgents folder (`user-agent`), `/Library/LaunchAgents` (`system-agent`), `/Library/LaunchDaemons` (`system-daemon`), `/System/Library/LaunchAgents` (`os-agent`) and `/System/Library/LaunchDaemons` (`os-daemon`), and SHALL exit 0, also when there is none. It SHALL compare the label inside the file, not the file name. For a LABEL with a character other than letters, digits, `.`, `-` and `_`, for no argument and for more than one, it SHALL print nothing on stdout and exit 64. It SHALL NOT change anything.
+`res-diag.sh label LABEL` SHALL print one line, `source` and path separated by a tab, for every property list whose parsed `Label` equals LABEL in the user LaunchAgents folder (`user-agent`), `/Library/LaunchAgents` (`system-agent`), `/Library/LaunchDaemons` (`system-daemon`), `/System/Library/LaunchAgents` (`os-agent`) and `/System/Library/LaunchDaemons` (`os-daemon`). It SHALL compare the label after parsing the file, not the file name and not the bytes of the file. It SHALL exit 0 when it read every folder and every property list in them, also when none matches. When a folder that exists cannot be listed, or a file that exists is not a readable property list, it SHALL name it on stderr and exit 5, and still print the matches it found. A folder that does not exist and a symbolic link whose target does not exist SHALL be skipped. For a LABEL with a character other than letters, digits, `.`, `-` and `_`, for no argument and for more than one, it SHALL print nothing on stdout and exit 64. It SHALL NOT change anything.
 
 #### Scenario: a label used at user level and under /System/Library
 
@@ -229,3 +237,19 @@ A knowledge base whose only difference from a valid one is a line break inside t
 | label 'bad label' | empty stdout | 64 |
 | label | empty stdout | 64 |
 | label a b | empty stdout | 64 |
+
+##### Example: a label written with a character reference is found
+
+`agents_os/encoded.plist` writes its label as `com&#46;example.sync-agent`.
+
+| Call | Output | Exit |
+| --- | --- | --- |
+| label com.example.sync-agent | `user-agent` with the user file, and `os-agent` with `encoded.plist` | 0 |
+
+##### Example: an unreadable property list makes the lookup incomplete
+
+The OS daemons folder is replaced by a folder that holds a file `broken.plist` that is not a property list and a symbolic link `gone.plist` whose target does not exist.
+
+| Call | Stdout | Stderr names | Exit |
+| --- | --- | --- | --- |
+| label com.example.keepdict | one line, `user-agent` | `broken.plist`, not `gone.plist` | 5 |
